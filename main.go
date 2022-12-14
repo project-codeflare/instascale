@@ -31,9 +31,9 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	"github.ibm.com/asmalvan/instascale-1/controllers"
+	"github.com/project-codeflare/instascale/controllers"
 	//+kubebuilder:scaffold:imports
-	mygroupv1beta1 "github.com/IBM/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
+	mygroupv1beta1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 )
 
 var (
