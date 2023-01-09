@@ -16,7 +16,7 @@ spec:
         app: instascale
     spec:
       containers:
-      - image: asm582/instascale:latest
+      - image: quay.io/project-codeflare/instascale-controller:latest
         name: instascale
         resources:
           limits:

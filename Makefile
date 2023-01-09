@@ -29,7 +29,7 @@ BUNDLE_METADATA_OPTS ?= $(BUNDLE_CHANNELS) $(BUNDLE_DEFAULT_CHANNEL)
 #
 # For example, running 'make bundle-build bundle-push catalog-build catalog-push' will build and push both
 # my.domain/instascale-1-bundle:$VERSION and my.domain/instascale-1-catalog:$VERSION.
-IMAGE_TAG_BASE ?= my.domain/instascale-1
+IMAGE_TAG_BASE ?= quay.io/project-codeflare/instascale
 
 # BUNDLE_IMG defines the image:tag used for the bundle.
 # You can use it as an arg. (E.g make bundle-build BUNDLE_IMG=<some-registry>/<project-name-bundle>:<tag>)
@@ -116,8 +116,12 @@ build: generate fmt vet ## Build manager binary.
 run: manifests generate fmt vet ## Run a controller from your host.
 	go run ./main.go
 
+.PHONY: api-dir
+api-dir: ## Create empty API dir if none exists
+	mkdir api > /dev/null 2>&1 || true
+
 .PHONY: docker-build
-docker-build: test ## Build docker image with the manager.
+docker-build: test api-dir ## Build docker image with the manager.
 	docker build -t ${IMG} .
 
 .PHONY: docker-push

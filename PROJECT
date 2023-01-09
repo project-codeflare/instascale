@@ -1,10 +1,10 @@
-domain: my.domain
+domain: quay.io/project-codeflare
 layout:
 - go.kubebuilder.io/v3
 plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
-projectName: instascale-1
+projectName: instascale
 repo: github.ibm.com/project-codeflare/instascale
 resources:
 - controller: true
@@ -12,4 +12,4 @@ resources:
   group: mcad.ibm.com
   kind: AppWrapper
   version: v1beta1
-version: "3"
+version: "0.0.1"
