@@ -10,8 +10,17 @@
 
 # Usage
 - To build locally : `make run`
-- To build and release a docker image for controller : `make IMG=asm582/instascale docker-build docker-push`
-- To deploy on kubernetes cluster use deployments for now
+- To build and release a docker image for controller : `make IMG=quay.io/project-codeflare/instascale:<TAG> docker-build docker-push`
+- Note that the other contents of the Makefile (as well as the `config` and `bin` dirs) exist for future operator development, and are not currently utilized
+- To deploy on kubernetes cluster use the `deployments` dir for now:
+```
+git clone https://github.com/project-codeflare/instascale.git
+cd deployment/
+oc apply -f instascale-sa.yaml
+oc apply -f instascale-clusterrole.yaml
+oc apply -f instascale-clusterrolebinding.yaml
+oc apply -f deployment.yaml
+```
 
 # Testing
 
