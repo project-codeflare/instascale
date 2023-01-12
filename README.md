@@ -24,4 +24,8 @@ oc apply -f deployment.yaml
 
 # Testing
 
-TBD
+Run tests with command: 
+``` 
+go test -v ./controllers/
+
+```
