@@ -1,11 +1,11 @@
 # InstaScale
 
-InstaScale is a controller that works with Multi-cluster-app-dispatcher (MCAD) to get aggregated resources available in the kubernetes cluster without creating pending pods. It uses [machineset](https://github.com/openshift/machine-api-operator) to launch instances on cloudprovider to be added to the Kubernetes cluster.
+InstaScale is a controller that works with Multi-cluster-app-dispatcher (MCAD) to get aggregated resources available in the kubernetes cluster without creating pending pods. It uses [machinesets](https://github.com/openshift/machine-api-operator) to launch instances on cloud provider to be added to the Kubernetes cluster.
 
 Key features:
 - Acquires aggregated heterogenous instances needed for workload execution.
-- Does not clog Kubernetes controlplane.
-- Works with your Kubernetes scheduling system to scheduler pods on aggregated resources.
+- Does not clog Kubernetes control plane.
+- Works with your Kubernetes scheduling system to schedule pods on aggregated resources.
 - Terminates instances on workload completion.
 
 
