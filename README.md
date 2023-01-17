@@ -1,5 +1,7 @@
 # InstaScale
 
+[![Go](https://github.com/project-codeflare/instascale/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/project-codeflare/instascale/actions/workflows/go.yml)
+
 InstaScale is a controller that works with Multi-cluster-app-dispatcher (MCAD) to get aggregated resources available in the kubernetes cluster without creating pending pods. It uses [machinesets](https://github.com/openshift/machine-api-operator) to launch instances on cloud provider to be added to the Kubernetes cluster.
 
 Key features:
