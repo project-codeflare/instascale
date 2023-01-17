@@ -19,8 +19,13 @@ Key features:
 
 # Development
 
+## Pre-requisites
+-  Installed go version 1.17
+-  Running OpenShift cluster
+
 ## Building
-- To build locally : `make run`
+- To build locally : `make build`
+- To run locally : `make run`
 ## Image creation
 - To build and release a docker image for controller : `make IMG=quay.io/project-codeflare/instascale:<TAG> docker-build docker-push`
 - Note that the other contents of the Makefile (as well as the `config` and `bin` dirs) exist for future operator development, and are not currently utilized
