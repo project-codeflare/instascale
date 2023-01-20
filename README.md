@@ -37,6 +37,7 @@ Key features:
 ```
 git clone https://github.com/project-codeflare/instascale.git
 cd deployment/
+oc apply -f instascale-configmap.yaml
 oc apply -f instascale-sa.yaml
 oc apply -f instascale-clusterrole.yaml
 oc apply -f instascale-clusterrolebinding.yaml
