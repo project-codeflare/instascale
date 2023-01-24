@@ -20,16 +20,17 @@ jobs:
     - uses: actions/checkout@v3
 
     - name: Grab New Version Tag
-      run: export TAG="$(cat VERSION)"
+      run: |
+        echo "tag=$(cat VERSION)" >> $GITHUB_ENV
 
     - name: Image Build
       run: |
         make docker-build
       env: 
-        IMG: quay.io/project-codeflare/instascale:${TAG}
+        IMG: quay.io/project-codeflare/instascale:${{ env.tag }}
 
     - name: Image Push
       run: |
         docker login quay.io -u $QUAY_ID -p $QUAY_TOKEN
         make docker-push
-      env: quay.io/project-codeflare/instascale:${TAG}
+      env: quay.io/project-codeflare/instascale:${{ env.tag }}
