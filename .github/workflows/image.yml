@@ -33,4 +33,5 @@ jobs:
       run: |
         docker login quay.io -u $QUAY_ID -p $QUAY_TOKEN
         make docker-push
-      env: quay.io/project-codeflare/instascale:${{ env.tag }}
+      env:
+        IMG: quay.io/project-codeflare/instascale:${{ env.tag }}
