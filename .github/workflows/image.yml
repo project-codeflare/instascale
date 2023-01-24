@@ -1,0 +1,35 @@
+# This workflow will build an image for the instascale-controller, then push the image to the `project-codeflare` quay repo
+
+name: Image
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "VERSION"
+  pull_request:
+    branches: [ "main" ]
+    paths:
+      - "VERSION"
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Grab New Version Tag
+      run: export TAG="$(cat VERSION)"
+
+    - name: Image Build
+      run: |
+        make docker-build
+      env: 
+        IMG: quay.io/project-codeflare/instascale:${TAG}
+
+    - name: Image Push
+      run: |
+        docker login quay.io -u $QUAY_ID -p $QUAY_TOKEN
+        make docker-push
+      env: quay.io/project-codeflare/instascale:${TAG}
