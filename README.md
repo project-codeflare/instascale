@@ -1,4 +1,4 @@
-# InstaScale
+# <img src=https://user-images.githubusercontent.com/10506868/216672268-12630923-d9a4-4298-82d3-d07d28b8a234.png alt=InstaScale width=373 height=146 title=InstaScale>
 
 [![Go](https://github.com/project-codeflare/instascale/actions/workflows/go.yml/badge.svg?branch=main)](https://github.com/project-codeflare/instascale/actions/workflows/go.yml)
 
