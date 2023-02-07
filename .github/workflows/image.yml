@@ -36,3 +36,10 @@ jobs:
         make docker-push
       env:
         IMG: quay.io/project-codeflare/instascale-controller:v${{ env.tag }}
+
+    - name: Image Push (Latest Tag)
+      run: |
+        docker tag quay.io/project-codeflare/instascale-controller:v${{ env.tag }} $IMG
+        make docker-push
+      env:
+        IMG: quay.io/project-codeflare/instascale-controller:latest
