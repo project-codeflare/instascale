@@ -52,7 +52,6 @@ type AppWrapperReconciler struct {
 	Scheme *runtime.Scheme
 }
 
-//var nodeCache []string
 var scaledAppwrapper []string
 
 const (
@@ -67,7 +66,6 @@ var msInformerHasSynced bool
 var machineClient mapiclientset.Interface
 var queueJobLister v1.AppWrapperLister
 
-//var arbclients *clientset.Clientset
 var kubeClient *kubernetes.Clientset
 
 //+kubebuilder:rbac:groups=instascale.ibm.com.instascale.ibm.com,resources=appwrappers,verbs=get;list;watch;create;update;patch;delete
@@ -77,19 +75,9 @@ var kubeClient *kubernetes.Clientset
 //+kubebuilder:rbac:groups=apps,resources=machineset,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=apps,resources=machineset/status,verbs=get
 
-// Reconcile is part of the main kubernetes reconciliation loop which aims to
-// move the current state of the cluster closer to the desired state.
-// TODO(user): Modify the Reconcile function to compare the state specified by
-// the AppWrapper object against the actual cluster state, and then
-// perform operations to make the cluster state reflect the state specified by
-// the user.
-//
-// For more details, check Reconcile and its Result here:
-// - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
 
-	// TODO(user): your logic here
 	var appwrapper arbv1.AppWrapper
 	if err := r.Get(ctx, req.NamespacedName, &appwrapper); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -98,10 +86,8 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 		klog.Error(err, "unable to fetch appwrapper")
 	}
-	//klog.Infof("The appwrapper name is: %v", appwrapper.Name)
 
 	kubeconfig := os.Getenv("KUBECONFIG")
-	//kubeconfig := "/Users/abhishekmalvankar/aws/ocp-sched-test-v2/auth/kubeconfig"
 	cb, err := NewClientBuilder(kubeconfig)
 	if err != nil {
 		klog.Fatalf("Error creating clients: %v", err)
@@ -110,7 +96,6 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if err != nil {
 		klog.Info("Failed to get rest config")
 	}
-	//arbclients = clientset.NewForConfigOrDie(restConfig)
 	machineClient = cb.MachineClientOrDie("machine-shared-informer")
 	kubeClient, _ = kubernetes.NewForConfig(restConfig)
 	factory := machineinformersv1beta1.NewSharedInformerFactoryWithOptions(machineClient, resyncPeriod()(), machineinformersv1beta1.WithNamespace(""))
@@ -187,12 +172,6 @@ func addAppwrappersThatNeedScaling() {
 	defer close(stopCh)
 	go queueJobInformer.Informer().Run(stopCh)
 	cache.WaitForCacheSync(stopCh, queueJobSynced)
-	// queuedJobs, err := queueJobLister.AppWrappers("").List(labels.Everything())
-	// if err != nil {
-	// 	klog.Fatalf("Error listing: %v", err)
-	// }
-
-	//klog.Infof("length of queued AW is: %d", len(queuedJobs))
 
 	<-stopCh
 }
@@ -222,7 +201,6 @@ func onAdd(obj interface{}) {
 	if ok {
 		klog.Infof("Found Appwrapper named %s that has status %v", aw.Name, aw.Status.State)
 		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" {
-			//scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 			demandPerInstanceType := discoverInstanceTypes(aw)
 			if canScale(demandPerInstanceType) {
 				scaleUp(aw, demandPerInstanceType)
@@ -241,21 +219,12 @@ func onUpdate(old, new interface{}) {
 		status := aw.Status.State
 		if status == "Completed" {
 			klog.Info("Job completed, deleting resources owned")
-			//can delete AW if needed
-			// foreground := metav1.DeletePropagationForeground
-			// arbclients.ArbV1().AppWrappers(aw.Namespace).Delete(aw.Name, &metav1.DeleteOptions{
-			// 	PropagationPolicy: &foreground,
-			// })
 
 			deleteMachineSet(aw)
 		}
 		if contains(scaledAppwrapper, aw.Name) {
-			//klog.Infof("Already scaled appwrapper %v", aw.Name)
 			return
 		}
-		// if reUseMachineSet() {
-		// 	return
-		// }
 
 		pending, aw := IsAwPending()
 		if pending {
@@ -279,8 +248,6 @@ func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
 			instanceRequired = strings.Split(v, "_")
 		}
 	}
-	//instanceRequired := res[len(res)-1]
-	//klog.Infof("Extracting instance name from AW name %v and using %v", aw.Name, instanceRequired)
 
 	for _, genericItem := range aw.Spec.AggrResources.GenericItems {
 		for idx, val := range genericItem.CustomPodResources {
@@ -288,7 +255,7 @@ func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
 			demandMapPerInstanceType[instanceName] = val.Replicas
 		}
 	}
-	//klog.Infof("the demand map is %v", demandMapPerInstanceType)
+
 	return demandMapPerInstanceType
 }
 
@@ -317,9 +284,7 @@ func scaleMachineSet(aw *arbv1.AppWrapper, userRequestedInstanceType string, rep
 			klog.Infof("Error retrieving provider config %v", err)
 		}
 		if userRequestedInstanceType == providerConfig.InstanceType {
-			//klog.Infof("working on %v", userRequestedInstanceType)
 			copyOfaMachineSet := aMachineSet.DeepCopy()
-			//updatedReplicas := currentReplicas + replicas
 			replicas := int32(replicas)
 			copyOfaMachineSet.Spec.Replicas = &replicas
 			copyOfaMachineSet.ResourceVersion = ""
@@ -372,23 +337,6 @@ func scaleMachineSet(aw *arbv1.AppWrapper, userRequestedInstanceType string, rep
 	}
 }
 
-// func addLabelsToNodes(ms machinev1.MachineSet, aw *arbv1.AppWrapper) {
-// 	allMachines, _ := machineClient.MachineV1beta1().Machines("").List(context.Background(), metav1.ListOptions{})
-// 	for idx := range allMachines.Items {
-// 		machine := &allMachines.Items[idx]
-// 		for k, _ := range machine.Labels {
-// 			if k == "role" {
-// 				nodeName := machine.Status.NodeRef.Name
-// 				labelPatch := fmt.Sprintf(`[{"op":"add","path":"/metadata/labels/%s","value":"%s" }]`, "role", aw.Name)
-// 				ms, err := kubeClient.CoreV1().Nodes().Patch(context.Background(), nodeName, types.JSONPatchType, []byte(labelPatch), metav1.PatchOptions{})
-// 				klog.Infof("The error is %v", err)
-// 				klog.Infof("Got ms %v", ms)
-// 			}
-// 		}
-// 	}
-// 	scaledAppwrapper = append(scaledAppwrapper, aw.Name)
-// }
-
 func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
 	queuedJobs, err := queueJobLister.AppWrappers("").List(labels.Everything())
 	if err != nil {
@@ -399,11 +347,8 @@ func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
 		if contains(scaledAppwrapper, aw.Name) {
 			continue
 		}
-		//klog.Infof("Inside for loop %v", aw.Name)
 		status := aw.Status.State
-		//klog.Infof("The status is %v", status)
 		allconditions := aw.Status.Conditions
-		//klog.Infof("The conditions are %v", allconditions)
 		for _, condition := range allconditions {
 			if status == "Pending" && strings.Contains(condition.Message, "Insufficient") {
 				klog.Infof("Pending AppWrapper %v needs scaling", aw.Name)
@@ -418,38 +363,17 @@ func onDelete(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
 		klog.Infof("Appwrapper deleted scale-down machineset: %s ", aw.Name)
-		// if reUseMachineSet() {
-		// 	return
-		// }
+
 		scaleDown(aw)
 	}
 
 }
 
-//un-used function, should be a seperate thread
-//This should filter already seen appwrappers
-// func reUseMachineSet(aw *arbv1.AppWrapper) bool {
-// 	queuedJobs, _ := queueJobLister.AppWrappers("").List(labels.Everything())
-// 	allMachineSet, _ := msLister.MachineSets("").List(labels.Everything())
-// 	for _, aw := range queuedJobs {
-// 		for _, aMachineset := range allMachineSet {
-// 			if strings.Contains(aw.Name, aMachineset.Name) {
-// 				klog.Infof("Need to reuse")
-// 				return true
-// 			}
-// 		}
-
-// 	}
-// 	return false
-// }
-
 func deleteMachineSet(aw *arbv1.AppWrapper) {
 	var err error
 	allMachineSet, _ := msLister.MachineSets("").List(labels.Everything())
 	for _, aMachineSet := range allMachineSet {
-		//klog.Infof("%v.%v", aMachineSet.Name, aw.Name)
 		if strings.Contains(aMachineSet.Name, aw.Name) {
-			//klog.Infof("Deleting machineset named %v", aw.Name)
 			err = machineClient.MachineV1beta1().MachineSets(namespaceToList).Delete(context.Background(), aMachineSet.Name, metav1.DeleteOptions{})
 			if err == nil {
 				klog.Infof("Delete successful")
@@ -459,7 +383,6 @@ func deleteMachineSet(aw *arbv1.AppWrapper) {
 }
 
 func scaleDown(aw *arbv1.AppWrapper) {
-	//klog.Infof("Inside scale down")
 	deleteMachineSet(aw)
 	//make a seperate slice
 	for idx := range scaledAppwrapper {
