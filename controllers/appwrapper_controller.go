@@ -266,11 +266,13 @@ func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
 			instanceRequired = strings.Split(v, "_")
 		}
 	}
-
+	klog.Infof("The instanceRequired array: %v", instanceRequired)
 	for _, genericItem := range aw.Spec.AggrResources.GenericItems {
 		for idx, val := range genericItem.CustomPodResources {
 			instanceName := instanceRequired[idx]
+			klog.Infof("Got instance name %v", instanceName)
 			demandMapPerInstanceType[instanceName] = val.Replicas
+			instanceRequired = append(instanceRequired[:idx], instanceRequired[idx+1:]...)
 		}
 	}
 	return demandMapPerInstanceType

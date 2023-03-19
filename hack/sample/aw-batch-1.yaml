@@ -12,15 +12,16 @@ spec:
     Items: []
     GenericItems:
     - replicas: 1
+      #new addition
       custompodresources:
       - replicas: 1
         requests:
           cpu: 2
-          memory: 12G
+          memory: 10G
           nvidia.com/gpu: 0
         limits:
           cpu: 2
-          memory: 12G
+          memory: 10G
           nvidia.com/gpu: 0
       generictemplate:
         apiVersion: batch/v1
@@ -31,6 +32,15 @@ spec:
           # labels:
           #   appwrapper.mcad.ibm.com: aw-batch-1
         spec:
+          affinity:
+            nodeAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                nodeSelectorTerms:
+                - matchExpressions:
+                  - key: aw-batch-1
+                    operator: In
+                    values:
+                    - aw-batch-1
           parallelism: 1
           completions: 1
           template:
@@ -39,15 +49,6 @@ spec:
               labels:
                 appwrapper.mcad.ibm.com: "aw-batch-1"
             spec:
-              affinity:
-                nodeAffinity:
-                  requiredDuringSchedulingIgnoredDuringExecution:
-                    nodeSelectorTerms:
-                    - matchExpressions:
-                      - key: aw-batch-1
-                        operator: In
-                        values:
-                        - aw-batch-1
               containers:
               - name: aw-batch-1-1
                 image: ubuntu:latest
@@ -55,61 +56,61 @@ spec:
                 args: [ "sleep infinity" ]
                 resources:
                   requests:
-                    memory: 11G
+                    memory: 10G
                     cpu: 2
                   limits:
-                    memory: 11G
+                    memory: 10G
                     cpu: 2
               restartPolicy: Never
     - replicas: 1
       custompodresources:
       - replicas: 1
         requests:
-          cpu: 2
-          memory: 12G
+          cpu: 1
+          memory: 5G
           nvidia.com/gpu: 1
         limits:
-          cpu: 2
-          memory: 12G
-          nvidia.com/gpu: 1
+          cpu: 1
+          memory: 5G
+          nvidia.com/gpu:  1           
       generictemplate:
-        apiVersion: batch/v1
-        kind: Job
-        metadata:
-          namespace: default
-          name: aw-batch-1-2
-          # labels:
-          #   appwrapper.mcad.ibm.com: aw-batch-1
-        spec:
-          parallelism: 1
-          completions: 1
-          template:
-            metadata:
-              namespace: default
-              labels:
-                appwrapper.mcad.ibm.com: "aw-batch-1"
-            spec:
-              affinity:
-                nodeAffinity:
-                  requiredDuringSchedulingIgnoredDuringExecution:
-                    nodeSelectorTerms:
-                    - matchExpressions:
-                      - key: aw-batch-1
-                        operator: In
-                        values:
-                        - aw-batch-1
-              containers:
-              - name: aw-batch-1-2
-                image: ubuntu:latest
-                command: [ "/bin/bash", "-c", "--" ]
-                args: [ "sleep infinity" ]
-                resources:
-                  requests:
-                    memory: 11G
-                    cpu: 2
-                    nvidia.com/gpu: 1
-                  limits:
-                    memory: 11G
-                    cpu: 2
-                    nvidia.com/gpu: 1
-              restartPolicy: Never
+          apiVersion: batch/v1
+          kind: Job
+          metadata:
+            namespace: default
+            name: aw-batch-1-2
+            # labels:
+            #   appwrapper.mcad.ibm.com: aw-batch-1
+          spec:
+            affinity:
+              nodeAffinity:
+                requiredDuringSchedulingIgnoredDuringExecution:
+                  nodeSelectorTerms:
+                  - matchExpressions:
+                    - key: aw-batch-1
+                      operator: In
+                      values:
+                      - aw-batch-1
+            parallelism: 1
+            completions: 1
+            template:
+              metadata:
+                namespace: default
+                labels:
+                  appwrapper.mcad.ibm.com: "aw-batch-1"
+              spec:
+                containers:
+                - name: aw-batch-1-2
+                  image: ubuntu:latest
+                  command: [ "/bin/bash", "-c", "--" ]
+                  args: [ "sleep infinity" ]
+                  resources:
+                    requests:
+                      memory: 10G
+                      cpu: 2
+                      nvidia.com/gpu: 1
+                    limits:
+                      memory: 10G
+                      cpu: 2
+                      nvidia.com/gpu: 1
+                restartPolicy: Never
