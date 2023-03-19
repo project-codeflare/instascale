@@ -192,13 +192,6 @@ func addAppwrappersThatNeedScaling() {
 	defer close(stopCh)
 	go queueJobInformer.Informer().Run(stopCh)
 	cache.WaitForCacheSync(stopCh, queueJobSynced)
-	// queuedJobs, err := queueJobLister.AppWrappers("").List(labels.Everything())
-	// if err != nil {
-	//  klog.Fatalf("Error listing: %v", err)
-	// }
-
-	//klog.Infof("length of queued AW is: %d", len(queuedJobs))
-
 	<-stopCh
 }
 
@@ -246,22 +239,11 @@ func onUpdate(old, new interface{}) {
 		status := aw.Status.State
 		if status == "Completed" {
 			klog.Info("Job completed, deleting resources owned")
-			//can delete AW if needed
-			// foreground := metav1.DeletePropagationForeground
-			// arbclients.ArbV1().AppWrappers(aw.Namespace).Delete(aw.Name, &metav1.DeleteOptions{
-			//  PropagationPolicy: &foreground,
-			// })
-
 			deleteMachineSet(aw)
 		}
 		if contains(scaledAppwrapper, aw.Name) {
-			//klog.Infof("Already scaled appwrapper %v", aw.Name)
 			return
 		}
-		// if reUseMachineSet() {
-		//  return
-		// }
-
 		pending, aw := IsAwPending()
 		if pending {
 			demandPerInstanceType := discoverInstanceTypes(aw)
@@ -284,8 +266,6 @@ func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
 			instanceRequired = strings.Split(v, "_")
 		}
 	}
-	//instanceRequired := res[len(res)-1]
-	//klog.Infof("Extracting instance name from AW name %v and using %v", aw.Name, instanceRequired)
 
 	for _, genericItem := range aw.Spec.AggrResources.GenericItems {
 		for idx, val := range genericItem.CustomPodResources {
@@ -293,7 +273,6 @@ func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
 			demandMapPerInstanceType[instanceName] = val.Replicas
 		}
 	}
-	//klog.Infof("the demand map is %v", demandMapPerInstanceType)
 	return demandMapPerInstanceType
 }
 
@@ -324,7 +303,6 @@ func scaleMachineSet(aw *arbv1.AppWrapper, userRequestedInstanceType string, rep
 		if userRequestedInstanceType == providerConfig.InstanceType {
 
 			if reuse {
-				klog.Infof("Inside REUSE")
 				copyOfaMachineSet := aMachineSet.DeepCopy()
 				additionalReplicas := int32(replicas)
 				existingReplicas := *copyOfaMachineSet.Spec.Replicas
@@ -371,63 +349,17 @@ func scaleMachineSet(aw *arbv1.AppWrapper, userRequestedInstanceType string, rep
 				for _, machine := range addedMachines.Items {
 					for k, v := range machine.Labels {
 						if k == "machine.openshift.io/cluster-api-machineset" {
-							//klog.Infof("checking for value %v", k)
 							if !contains(existingMachinesOwned, machine.Name) && v == copyOfaMachineSet.Name {
 								nodeName := machine.Status.NodeRef.Name
-								// labelPatch := fmt.Sprintf(`[{"op":"add","path":"/metadata/labels/%s","value":"%s" }]`, aw.Name, aw.Name)
-								// ms1_err, err_1 := machineClient.MachineV1beta1().Machines(namespaceToList).Patch(context.Background(), machine.Name, types.JSONPatchType, []byte(labelPatch), metav1.PatchOptions{})
-								// if err_1 != nil {
-								//  klog.Infof("Added label to machines %v", ms1_err)
-								// }
 								addLabelToMachine(aw, machine.Name)
-								// ms, err := kubeClient.CoreV1().Nodes().Patch(context.Background(), nodeName, types.JSONPatchType, []byte(labelPatch), metav1.PatchOptions{})
-								// if len(ms.Labels) > 0 && err == nil {
-								//  klog.Infof("label added to node %v, owned by machine %v", nodeName, machine.Name)
-								// }
 								addLabelToNode(aw, nodeName)
 							}
 						}
 					}
 				}
-				//find newly added machines
-				// var configureMachines []string
-				// var found bool = false
-				// for idx := range addedMachines.Items {
-				//  machine := &addedMachines.Items[idx]
-				//  for idx := range existingMachines.Items {
-				//      prevMachine := &existingMachines.Items[idx]
-				//      //ignore master
-				//      if strings.Contains(prevMachine.Name, "master") {
-				//          continue
-				//      }
-				//      if prevMachine == machine {
-				//          found = true
-				//      }
-				//  }
-				//  if !found && !contains(configureMachines, machine.Name) {
-				//      configureMachines = append(configureMachines, machine.Name)
-				//  }
-				// }
-				// klog.Infof("Newly added machines are %v", configureMachines)
-				// //add labels to filtered nodes
-				// for _, aFilteredMachine := range configureMachines {
-				//  for idx := range addedMachines.Items {
-				//      configureMachine := &addedMachines.Items[idx]
-				//      if aFilteredMachine == configureMachine.Name {
-				//          nodeName := configureMachine.Status.NodeRef.Name
-				//          labelPatch := fmt.Sprintf(`[{"op":"add","path":"/metadata/labels/%s","value":"%s" }]`, aw.Name, aw.Name)
-				//          ms, err := kubeClient.CoreV1().Nodes().Patch(context.Background(), nodeName, types.JSONPatchType, []byte(labelPatch), metav1.PatchOptions{})
-				//          if len(ms.Labels) > 0 && err == nil {
-				//              klog.Infof("label added to node %v, owned by machine %v", nodeName, configureMachine.Name)
-				//          }
-				//      }
-				//  }
-				// }
 				return
 			} else {
-				//klog.Infof("working on %v", userRequestedInstanceType)
 				copyOfaMachineSet := aMachineSet.DeepCopy()
-				//updatedReplicas := currentReplicas + replicas
 				replicas := int32(replicas)
 				copyOfaMachineSet.Spec.Replicas = &replicas
 				copyOfaMachineSet.ResourceVersion = ""
@@ -483,23 +415,6 @@ func scaleMachineSet(aw *arbv1.AppWrapper, userRequestedInstanceType string, rep
 	}
 }
 
-// func addLabelsToNodes(ms machinev1.MachineSet, aw *arbv1.AppWrapper) {
-//  allMachines, _ := machineClient.MachineV1beta1().Machines("").List(context.Background(), metav1.ListOptions{})
-//  for idx := range allMachines.Items {
-//      machine := &allMachines.Items[idx]
-//      for k, _ := range machine.Labels {
-//          if k == "role" {
-//              nodeName := machine.Status.NodeRef.Name
-//              labelPatch := fmt.Sprintf(`[{"op":"add","path":"/metadata/labels/%s","value":"%s" }]`, "role", aw.Name)
-//              ms, err := kubeClient.CoreV1().Nodes().Patch(context.Background(), nodeName, types.JSONPatchType, []byte(labelPatch), metav1.PatchOptions{})
-//              klog.Infof("The error is %v", err)
-//              klog.Infof("Got ms %v", ms)
-//          }
-//      }
-//  }
-//  scaledAppwrapper = append(scaledAppwrapper, aw.Name)
-// }
-
 func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
 	queuedJobs, err := queueJobLister.AppWrappers("").List(labels.Everything())
 	if err != nil {
@@ -510,11 +425,8 @@ func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
 		if contains(scaledAppwrapper, aw.Name) {
 			continue
 		}
-		//klog.Infof("Inside for loop %v", aw.Name)
 		status := aw.Status.State
-		//klog.Infof("The status is %v", status)
 		allconditions := aw.Status.Conditions
-		//klog.Infof("The conditions are %v", allconditions)
 		for _, condition := range allconditions {
 			if status == "Pending" && strings.Contains(condition.Message, "Insufficient") {
 				klog.Infof("Pending AppWrapper %v needs scaling", aw.Name)
@@ -597,7 +509,6 @@ func checkIfExactMatchExists(aw *arbv1.AppWrapper) bool {
 							}
 						}
 					}
-					//return shouldScaleDown
 				}
 			}
 		}
@@ -610,9 +521,6 @@ func onDelete(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
 		klog.Infof("Appwrapper deleted scale-down machineset: %s ", aw.Name)
-		// if reUseMachineSet() {
-		//  return
-		// }
 		if reuse {
 			if checkIfExactMatchExists(aw) {
 				scaleDown(aw)
@@ -624,23 +532,6 @@ func onDelete(obj interface{}) {
 	}
 
 }
-
-//un-used function, should be a seperate thread
-//This should filter already seen appwrappers
-// func reUseMachineSet(aw *arbv1.AppWrapper) bool {
-//  queuedJobs, _ := queueJobLister.AppWrappers("").List(labels.Everything())
-//  allMachineSet, _ := msLister.MachineSets("").List(labels.Everything())
-//  for _, aw := range queuedJobs {
-//      for _, aMachineset := range allMachineSet {
-//          if strings.Contains(aw.Name, aMachineset.Name) {
-//              klog.Infof("Need to reuse")
-//              return true
-//          }
-//      }
-
-//  }
-//  return false
-// }
 
 func deleteMachineSet(aw *arbv1.AppWrapper) {
 	var err error
@@ -670,14 +561,10 @@ func annotateToDeleteMachine(aw *arbv1.AppWrapper) {
 						machineName := strings.Split(v, "/")
 						klog.Infof("The machine name to be annotated %v", machineName[1])
 						allMachines, _ := machineClient.MachineV1beta1().Machines(namespaceToList).List(context.Background(), metav1.ListOptions{})
-						//klog.Infof("allMachines are %v", allMachines)
 						for _, aMachine := range allMachines.Items {
 							//remove index hardcoding
 							updateMachine := aMachine.DeepCopy()
-							//klog.Infof("the machine name obtained from lister is %v", aMachine.Name)
-							//klog.Infof("the machine name to be matched is %v", machineName[1])
 							if aMachine.Name == machineName[1] {
-								//klog.Infof("Adding annotation")
 								updateMachine.Annotations["machine.openshift.io/cluster-api-delete-machine"] = "true"
 								machine, err := machineClient.MachineV1beta1().Machines(namespaceToList).Update(context.Background(), updateMachine, metav1.UpdateOptions{})
 								if err == nil {
@@ -685,14 +572,12 @@ func annotateToDeleteMachine(aw *arbv1.AppWrapper) {
 								}
 								var updateMachineset string = ""
 								for k, v := range machine.Labels {
-									//klog.Infof("Looking for key %v", k)
 									if k == "machine.openshift.io/cluster-api-machineset" {
 										updateMachineset = v
 									}
 									klog.Infof("Machineset to update is %v", updateMachineset)
 								}
 								if updateMachineset != "" {
-									//klog.Infof("Got Machineset %v", updateMachineset)
 									allMachineSet, err := msLister.MachineSets("").List(labels.Everything())
 									if err != nil {
 										klog.Infof("Machineset retrieval error")
@@ -721,7 +606,6 @@ func annotateToDeleteMachine(aw *arbv1.AppWrapper) {
 }
 
 func scaleDown(aw *arbv1.AppWrapper) {
-	//klog.Infof("Inside scale down")
 	if reuse {
 		annotateToDeleteMachine(aw)
 	} else {
