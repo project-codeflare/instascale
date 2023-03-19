@@ -12,7 +12,6 @@ spec:
     Items: []
     GenericItems:
     - replicas: 1
-      #new addition
       custompodresources:
       - replicas: 1
         requests:
@@ -23,15 +22,6 @@ spec:
           cpu: 2
           memory: 12G
           nvidia.com/gpu: 0
-      - replicas: 1
-        requests:
-          cpu: 2
-          memory: 12G
-          nvidia.com/gpu: 1
-        limits:
-          cpu: 2
-          memory: 12G
-          nvidia.com/gpu: 1
       generictemplate:
         apiVersion: batch/v1
         kind: Job
@@ -65,13 +55,24 @@ spec:
                 args: [ "sleep infinity" ]
                 resources:
                   requests:
-                    memory: "512Mi"
-                    cpu: "500m"
+                    memory: 11G
+                    cpu: 2
                   limits:
-                    memory: "512Mi"
-                    cpu: "500m"
+                    memory: 11G
+                    cpu: 2
               restartPolicy: Never
-    -  generictemplate:
+    - replicas: 1
+      custompodresources:
+      - replicas: 1
+        requests:
+          cpu: 2
+          memory: 12G
+          nvidia.com/gpu: 1
+        limits:
+          cpu: 2
+          memory: 12G
+          nvidia.com/gpu: 1
+      generictemplate:
         apiVersion: batch/v1
         kind: Job
         metadata:
@@ -88,6 +89,15 @@ spec:
               labels:
                 appwrapper.mcad.ibm.com: "aw-batch-2"
             spec:
+              affinity:
+                nodeAffinity:
+                  requiredDuringSchedulingIgnoredDuringExecution:
+                    nodeSelectorTerms:
+                    - matchExpressions:
+                      - key: aw-batch-2
+                        operator: In
+                        values:
+                        - aw-batch-2
               containers:
               - name: aw-batch-2-2
                 image: ubuntu:latest
@@ -95,11 +105,11 @@ spec:
                 args: [ "sleep infinity" ]
                 resources:
                   requests:
-                    memory: "12Gi"
-                    cpu: "2"
+                    memory: 11G
+                    cpu: 2
                     nvidia.com/gpu: 1
                   limits:
-                    memory: "12Gi"
-                    cpu: "2"
+                    memory: 11G
+                    cpu: 2
                     nvidia.com/gpu: 1
               restartPolicy: Never
