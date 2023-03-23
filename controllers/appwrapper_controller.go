@@ -503,7 +503,7 @@ func findExactMatch(aw *arbv1.AppWrapper) *arbv1.AppWrapper {
 }
 
 // add logic to swap out labels with new appwrapper label
-func swapLabels(oldAw *arbv1.AppWrapper, newAw *arbv1.AppWrapper) {
+func swapNodeLabels(oldAw *arbv1.AppWrapper, newAw *arbv1.AppWrapper) {
 	allMachines, errm := machineClient.MachineV1beta1().Machines(namespaceToList).List(context.Background(), metav1.ListOptions{})
 	if errm != nil {
 		klog.Infof("Error creating machineset: %v", errm)
@@ -527,15 +527,17 @@ func swapLabels(oldAw *arbv1.AppWrapper, newAw *arbv1.AppWrapper) {
 func onDelete(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
-		klog.Infof("Appwrapper deleted scale-down machineset: %s ", aw.Name)
 		if reuse {
 			match := findExactMatch(aw)
 			if match != nil {
-				swapLabels(aw, match)
+				klog.Infof("Appwrapper %s deleted, swapping machines to %s", aw.Name, match.Name)
+				swapNodeLabels(aw, match)
 			} else {
+				klog.Infof("Appwrapper %s deleted, scaling down machines", aw.Name)
 				scaleDown((aw))
 			}
 		} else {
+			klog.Infof("Appwrapper deleted scale-down machineset: %s ", aw.Name)
 			scaleDown(aw)
 		}
 
