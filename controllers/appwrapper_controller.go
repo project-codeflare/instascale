@@ -528,10 +528,10 @@ func onDelete(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
 		if reuse {
-			match := findExactMatch(aw)
-			if match != nil {
-				klog.Infof("Appwrapper %s deleted, swapping machines to %s", aw.Name, match.Name)
-				swapNodeLabels(aw, match)
+			matchedAw := findExactMatch(aw)
+			if matchedAw != nil {
+				klog.Infof("Appwrapper %s deleted, swapping machines to %s", aw.Name, matchedAw.Name)
+				swapNodeLabels(aw, matchedAw)
 			} else {
 				klog.Infof("Appwrapper %s deleted, scaling down machines", aw.Name)
 				scaleDown((aw))
