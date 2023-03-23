@@ -1,5 +1,3 @@
-
-
 /*
 Copyright 2022.
 
@@ -19,39 +17,39 @@ limitations under the License.
 package controllers
 
 import (
-    "context"
-    "fmt"
-    "strconv"
+	"context"
+	"fmt"
+	"strconv"
 
-    "os"
-    "strings"
-    "time"
+	"os"
+	"strings"
+	"time"
 
-    mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
-    machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
-    "github.com/openshift/client-go/machine/listers/machine/v1beta1"
-    arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
-    "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/clientset/controller-versioned/clients"
-    arbinformers "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/informers/controller-externalversion"
-    v1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/listers/controller/v1"
-    corev1 "k8s.io/api/core/v1"
-    apierrors "k8s.io/apimachinery/pkg/api/errors"
-    metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-    "k8s.io/apimachinery/pkg/labels"
-    "k8s.io/apimachinery/pkg/runtime"
-    "k8s.io/apimachinery/pkg/types"
-    "k8s.io/client-go/kubernetes"
-    "k8s.io/client-go/tools/cache"
-    "k8s.io/klog"
-    ctrl "sigs.k8s.io/controller-runtime"
-    "sigs.k8s.io/controller-runtime/pkg/client"
-    "sigs.k8s.io/controller-runtime/pkg/log"
+	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
+	machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
+	"github.com/openshift/client-go/machine/listers/machine/v1beta1"
+	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
+	"github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/clientset/controller-versioned/clients"
+	arbinformers "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/informers/controller-externalversion"
+	v1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/listers/controller/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/tools/cache"
+	"k8s.io/klog"
+	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
-    client.Client
-    Scheme *runtime.Scheme
+	client.Client
+	Scheme *runtime.Scheme
 }
 
 //var nodeCache []string
@@ -59,9 +57,9 @@ var scaledAppwrapper []string
 var reuse bool = true
 
 const (
-    namespaceToList = "openshift-machine-api"
-    minResyncPeriod = 10 * time.Minute
-    kubeconfig      = ""
+	namespaceToList = "openshift-machine-api"
+	minResyncPeriod = 10 * time.Minute
+	kubeconfig      = ""
 )
 
 var maxScaleNodesAllowed int
@@ -471,13 +469,13 @@ func addLabelToNode(aw *arbv1.AppWrapper, nodeName string) {
 	}
 }
 
-// add logic to swap out labels with new appwrapper label
-func checkIfExactMatchExists(aw *arbv1.AppWrapper) bool {
-	var shouldScaleDown bool = true
+// add logic to check for matching pending AppWrappers
+func findExactMatch(aw *arbv1.AppWrapper) *arbv1.AppWrapper {
+	var match *arbv1.AppWrapper = nil
 	allAw, err := queueJobLister.List(labels.Everything())
 	if err != nil {
 		klog.Error("Cannot list queued appwrappers, associated machines will be deleted")
-		return shouldScaleDown
+		return match
 	}
 	var existingAcquiredMachineTypes = ""
 
@@ -488,35 +486,42 @@ func checkIfExactMatchExists(aw *arbv1.AppWrapper) bool {
 	}
 
 	for _, eachAw := range allAw {
+		if eachAw.Status.State != "Pending" {
+			continue
+		}
 		for k, v := range eachAw.Labels {
 			if k == "orderedinstance" {
 				if v == existingAcquiredMachineTypes {
-					shouldScaleDown = false
-					klog.Infof("Found exact match, %v appwrapper has acquire machinetypes %v", aw.Name, existingAcquiredMachineTypes)
-					allMachines, errm := machineClient.MachineV1beta1().Machines(namespaceToList).List(context.Background(), metav1.ListOptions{})
-					if errm != nil {
-						klog.Infof("Error creating machineset: %v", errm)
-					}
-					//klog.Infof("Got all machines %v", allMachines)
-					for idx := range allMachines.Items {
-						machine := &allMachines.Items[idx]
-						for k, _ := range machine.Labels {
-							if k == aw.Name {
-								nodeName := machine.Status.NodeRef.Name
-								klog.Infof("removing label from node %v that belonged to appwrapper %v and adding node to new appwrapper %v", nodeName, aw.Name, eachAw.Name)
-								removeLabelFromMachine(aw, machine.Name)
-								removeLabelFromNode(aw, nodeName)
-								addLabelToMachine(eachAw, machine.Name)
-								addLabelToNode(eachAw, nodeName)
-							}
-						}
-					}
+					match = eachAw
+					klog.Infof("Found exact match, %v appwrapper has acquire machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
 				}
 			}
 		}
 	}
-	return shouldScaleDown
+	return match
 
+}
+
+// add logic to swap out labels with new appwrapper label
+func swapLabels(oldAw *arbv1.AppWrapper, newAw *arbv1.AppWrapper) {
+	allMachines, errm := machineClient.MachineV1beta1().Machines(namespaceToList).List(context.Background(), metav1.ListOptions{})
+	if errm != nil {
+		klog.Infof("Error creating machineset: %v", errm)
+	}
+	//klog.Infof("Got all machines %v", allMachines)
+	for idx := range allMachines.Items {
+		machine := &allMachines.Items[idx]
+		for k, _ := range machine.Labels {
+			if k == oldAw.Name {
+				nodeName := machine.Status.NodeRef.Name
+				klog.Infof("removing label from node %v that belonged to appwrapper %v and adding node to new appwrapper %v", nodeName, oldAw.Name, newAw.Name)
+				removeLabelFromMachine(oldAw, machine.Name)
+				removeLabelFromNode(oldAw, nodeName)
+				addLabelToMachine(newAw, machine.Name)
+				addLabelToNode(newAw, nodeName)
+			}
+		}
+	}
 }
 
 func onDelete(obj interface{}) {
@@ -524,8 +529,11 @@ func onDelete(obj interface{}) {
 	if ok {
 		klog.Infof("Appwrapper deleted scale-down machineset: %s ", aw.Name)
 		if reuse {
-			if checkIfExactMatchExists(aw) {
-				scaleDown(aw)
+			match := findExactMatch(aw)
+			if match != nil {
+				swapLabels(aw, match)
+			} else {
+				scaleDown((aw))
 			}
 		} else {
 			scaleDown(aw)
