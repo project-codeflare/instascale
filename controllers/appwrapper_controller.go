@@ -326,12 +326,12 @@ func scaleMachineSet(aw *arbv1.AppWrapper, userRequestedInstanceType string, rep
 						}
 					}
 				}
-				klog.Infof("Existing machines owned are %v", existingMachinesOwned)
+				klog.Infof("Existing machines owned in %s are %v", copyOfaMachineSet.Name, existingMachinesOwned)
 
 				//copyOfaMachineSet.ResourceVersion = ""
 				ms, err := machineClient.MachineV1beta1().MachineSets(namespaceToList).Update(context.Background(), copyOfaMachineSet, metav1.UpdateOptions{})
 				if err != nil {
-					klog.Infof("Error creating machineset %v", err)
+					klog.Infof("Error updating machineset %v", err)
 					return
 				}
 				//wait until all replicas are available
@@ -344,7 +344,7 @@ func scaleMachineSet(aw *arbv1.AppWrapper, userRequestedInstanceType string, rep
 				}
 				addedMachines, errm := machineClient.MachineV1beta1().Machines(namespaceToList).List(context.Background(), metav1.ListOptions{})
 				if errm != nil {
-					klog.Infof("Error creating machineset: %v", errm)
+					klog.Infof("Error listing machineset: %v", errm)
 				}
 				for _, machine := range addedMachines.Items {
 					for k, v := range machine.Labels {
