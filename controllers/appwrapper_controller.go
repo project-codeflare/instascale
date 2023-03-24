@@ -208,7 +208,7 @@ func canScale(demandPerInstanceType map[string]int) bool {
 		totalNodesAddedByMachinesets += int32(count)
 	}
 	klog.Infof("The nodes allowed: %v and total nodes in cluster after node scale-out %v", maxScaleNodesAllowed, totalNodesAddedByMachinesets)
-	return totalNodesAddedByMachinesets < int32(maxScaleNodesAllowed)
+	return totalNodesAddedByMachinesets <= int32(maxScaleNodesAllowed)
 }
 
 // onAdd is the function executed when the kubernetes informer notified the
