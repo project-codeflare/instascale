@@ -340,7 +340,7 @@ func scaleMachineSet(aw *arbv1.AppWrapper, userRequestedInstanceType string, rep
 					klog.Infof("REUSE: waiting for machines to be in state Ready. replicas needed: %v and replicas available: %v", totalReplicas, ms.Status.AvailableReplicas)
 					time.Sleep(1 * time.Minute)
 					ms, _ = machineClient.MachineV1beta1().MachineSets(namespaceToList).Get(context.Background(), copyOfaMachineSet.Name, metav1.GetOptions{})
-					klog.Infof("REUSE: Querying machinset %v to get updated replicas", ms.Name)
+					klog.Infof("REUSE: Querying machineset %v to get updated replicas", ms.Name)
 				}
 				addedMachines, errm := machineClient.MachineV1beta1().Machines(namespaceToList).List(context.Background(), metav1.ListOptions{})
 				if errm != nil {
@@ -386,7 +386,7 @@ func scaleMachineSet(aw *arbv1.AppWrapper, userRequestedInstanceType string, rep
 					klog.Infof("waiting for machines to be in state Ready. replicas needed: %v and replicas available: %v", replicas, ms.Status.AvailableReplicas)
 					time.Sleep(1 * time.Minute)
 					ms, _ = machineClient.MachineV1beta1().MachineSets(namespaceToList).Get(context.Background(), copyOfaMachineSet.Name, metav1.GetOptions{})
-					klog.Infof("Querying machinset %v to get updated replicas", ms.Name)
+					klog.Infof("Querying machineset %v to get updated replicas", ms.Name)
 				}
 				klog.Infof("Machines are available. replicas needed: %v and replicas available: %v", replicas, ms.Status.AvailableReplicas)
 				allMachines, errm := machineClient.MachineV1beta1().Machines(namespaceToList).List(context.Background(), metav1.ListOptions{})
