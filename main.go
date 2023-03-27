@@ -24,6 +24,7 @@ import (
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	configv1 "github.com/openshift/api/config/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -43,6 +44,7 @@ var (
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
+	utilruntime.Must(configv1.Install(scheme))
 
 	//+kubebuilder:scaffold:scheme
 	_ = mcadv1beta1.AddToScheme(scheme)
@@ -52,10 +54,10 @@ func main() {
 	var metricsAddr string
 	var enableLeaderElection bool
 	var probeAddr string
-	var configmapNamespace string
+	var configsNamespace string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.StringVar(&configmapNamespace, "configmap-namespace", "kube-system", "The namespace containing the InstaScale configmap")
+	flag.StringVar(&configsNamespace, "configs-namespace", "kube-system", "The namespace containing the InstaScale configmap and OCM secret")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -81,9 +83,9 @@ func main() {
 	}
 
 	if err = (&controllers.AppWrapperReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		ConfigmapNamespace: configmapNamespace,
+		Client:           mgr.GetClient(),
+		Scheme:           mgr.GetScheme(),
+		ConfigsNamespace: configsNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AppWrapper")
 		os.Exit(1)
