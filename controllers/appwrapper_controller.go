@@ -18,14 +18,11 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
 
-	sdk "github.com/openshift-online/ocm-sdk-go"
-	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
 	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
 	"github.com/openshift/client-go/machine/listers/machine/v1beta1"
@@ -48,30 +45,32 @@ import (
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
 	client.Client
-	Scheme             *runtime.Scheme
-	ConfigmapNamespace string
+	Scheme           *runtime.Scheme
+	ConfigsNamespace string
 }
 
-//var nodeCache []string
-var scaledAppwrapper []string
-var reuse bool = true
-var machineset bool = true
+var (
+	scaledAppwrapper []string
+	reuse            = true
+	ocmClusterID     string
+	ocmToken         string
+	useMachineSets   bool
 
-const (
-	namespaceToList = "openshift-machine-api"
-	minResyncPeriod = 10 * time.Minute
-	kubeconfig      = ""
+	maxScaleNodesAllowed int
+	msLister             v1beta1.MachineSetLister
+	machineLister        v1beta1.MachineLister
+	msInformerHasSynced  bool
+	machineClient        mapiclientset.Interface
+	queueJobLister       v1.AppWrapperLister
+	kubeClient           *kubernetes.Clientset
 )
 
-var maxScaleNodesAllowed int
-var msLister v1beta1.MachineSetLister
-var machineLister v1beta1.MachineLister
-var msInformerHasSynced bool
-var machineClient mapiclientset.Interface
-var queueJobLister v1.AppWrapperLister
-
-//var arbclients *clientset.Clientset
-var kubeClient *kubernetes.Clientset
+const (
+	namespaceToList   = "openshift-machine-api"
+	minResyncPeriod   = 10 * time.Minute
+	pullSecretKey     = ".dockerconfigjson"
+	pullSecretAuthKey = "cloud.openshift.com"
+)
 
 //+kubebuilder:rbac:groups=instascale.ibm.com.instascale.ibm.com,resources=appwrappers,verbs=get;list;watch;create;update;patch;delete
 //+kubebuilder:rbac:groups=instascale.ibm.com.instascale.ibm.com,resources=appwrappers/status,verbs=get;update;patch
@@ -90,9 +89,9 @@ var kubeClient *kubernetes.Clientset
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+
 	_ = log.FromContext(ctx)
 
-	// TODO(user): your logic here
 	var appwrapper arbv1.AppWrapper
 	if err := r.Get(ctx, req.NamespacedName, &appwrapper); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -102,36 +101,17 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		klog.Error(err, "unable to fetch appwrapper")
 	}
 
-	kubeconfig := os.Getenv("KUBECONFIG")
-	cb, err := NewClientBuilder(kubeconfig)
-	if err != nil {
-		klog.Fatalf("Error creating clients: %v", err)
-	}
-	restConfig, err := getRestConfig(kubeconfig)
-	if err != nil {
-		klog.Info("Failed to get rest config")
-	}
-
-	machineClient = cb.MachineClientOrDie("machine-shared-informer")
-	kubeClient, _ = kubernetes.NewForConfig(restConfig)
 	factory := machineinformersv1beta1.NewSharedInformerFactoryWithOptions(machineClient, resyncPeriod()(), machineinformersv1beta1.WithNamespace(""))
 	informer := factory.Machine().V1beta1().MachineSets().Informer()
 	msLister = factory.Machine().V1beta1().MachineSets().Lister()
 	machineLister = factory.Machine().V1beta1().Machines().Lister()
-	instascaleConfigs, err := kubeClient.CoreV1().ConfigMaps(r.ConfigmapNamespace).Get(ctx, "instascale-config", metav1.GetOptions{})
-	if err != nil {
-		klog.Infof("Config map named instascale-config is not available in namespace %v", r.ConfigmapNamespace)
-	}
 
-	for key, value := range instascaleConfigs.Data {
-		if key == "maxScaleoutAllowed" {
-			if maxScaleNodesAllowed, err = strconv.Atoi(value); err != nil {
-				klog.Infof("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
-				maxScaleNodesAllowed = 3
-			}
-		}
+	// todo: Move the getOCMClusterID call out of reconcile loop.
+	// Only reason we are calling it here is that the client is not able to make
+	// calls until it is started, so SetupWithManager is not working.
+	if !useMachineSets && ocmClusterID == "" {
+		getOCMClusterID(r)
 	}
-	klog.Infof("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigs.Name, instascaleConfigs.Namespace, maxScaleNodesAllowed)
 
 	stopper := make(chan struct{})
 	defer close(stopper)
@@ -153,6 +133,47 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
+
+	kubeconfig := os.Getenv("KUBECONFIG")
+	cb, err := NewClientBuilder(kubeconfig)
+	if err != nil {
+		klog.Fatalf("Error creating clients: %v", err)
+	}
+	restConfig, err := getRestConfig(kubeconfig)
+	if err != nil {
+		klog.Info("Failed to get rest config")
+	}
+
+	machineClient = cb.MachineClientOrDie("machine-shared-informer")
+	kubeClient, _ = kubernetes.NewForConfig(restConfig)
+	instascaleConfigmap, err := kubeClient.CoreV1().ConfigMaps(r.ConfigsNamespace).Get(context.Background(), "instascale-config", metav1.GetOptions{})
+	if err != nil {
+		klog.Infof("Config map named instascale-config is not available in namespace %v", r.ConfigsNamespace)
+	}
+
+	if maxScaleNodesAllowed, err = strconv.Atoi(instascaleConfigmap.Data["maxScaleoutAllowed"]); err != nil {
+		klog.Infof("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
+		maxScaleNodesAllowed = 3
+	}
+	klog.Infof("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
+
+	useMachineSets = true
+	useMachinePools, err := strconv.ParseBool(instascaleConfigmap.Data["useMachinePools"])
+	if err != nil {
+		klog.Infof("Error converting %v to bool. Defaulting to using Machine Sets", useMachineSets)
+	} else {
+		useMachineSets = !useMachinePools
+		klog.Infof("Setting useMachineSets to %v", useMachineSets)
+	}
+
+	if !useMachineSets {
+		instascaleOCMSecret, err := kubeClient.CoreV1().Secrets(r.ConfigsNamespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
+		if err != nil {
+			klog.Infof("Error getting instascale-ocm-secret from namespace %v", r.ConfigsNamespace)
+		}
+		ocmToken = string(instascaleOCMSecret.Data["token"])
+	}
+
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&arbv1.AppWrapper{}).
 		Complete(r)
@@ -206,7 +227,7 @@ func onAdd(obj interface{}) {
 			//scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 			demandPerInstanceType := discoverInstanceTypes(aw)
 			//TODO: simplify the looping
-			if machineset {
+			if useMachineSets {
 				if canScaleMachineset(demandPerInstanceType) {
 					scaleUp(aw, demandPerInstanceType)
 				} else {
@@ -281,42 +302,16 @@ func scaleUp(aw *arbv1.AppWrapper, demandMapPerInstanceType map[string]int) {
 		for userRequestedInstanceType := range demandMapPerInstanceType {
 			//TODO: get unique machineset
 			replicas := demandMapPerInstanceType[userRequestedInstanceType]
-			if machineset {
+
+			if useMachineSets {
 				scaleMachineSet(aw, userRequestedInstanceType, replicas)
 			} else {
-				scaleMachinepool(aw, userRequestedInstanceType, replicas)
+				scaleMachinePool(aw, userRequestedInstanceType, replicas)
 			}
 		}
 		klog.Infof("Completed Scaling for %v", aw.Name)
 		scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 	}
-
-}
-
-func scaleMachinepool(aw *arbv1.AppWrapper, userRequestedInstanceType string, replicas int) {
-	logger, err := sdk.NewGoLoggerBuilder().
-		Debug(true).
-		Build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build logger: %v\n", err)
-		os.Exit(1)
-	}
-
-	// Create the connection, and remember to close it:
-	token := ""
-	connection, err := sdk.NewConnectionBuilder().
-		Logger(logger).
-		Tokens(token).
-		Build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build connection: %v\n", err)
-		os.Exit(1)
-	}
-	defer connection.Close()
-	m := make(map[string]string)
-	m[aw.Name] = aw.Name
-	createMachinePool, _ := cmv1.NewMachinePool().ID(aw.Name).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
-	klog.Infof("Create machinepool with instance type %v and name %v", userRequestedInstanceType, createMachinePool)
 
 }
 
@@ -378,7 +373,7 @@ func findExactMatch(aw *arbv1.AppWrapper) *arbv1.AppWrapper {
 func onDelete(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
-		if machineset {
+		if useMachineSets {
 			if reuse {
 				matchedAw := findExactMatch(aw)
 				if matchedAw != nil {
@@ -386,55 +381,17 @@ func onDelete(obj interface{}) {
 					swapNodeLabels(aw, matchedAw)
 				} else {
 					klog.Infof("Appwrapper %s deleted, scaling down machines", aw.Name)
-					scaleDown((aw))
+
+					scaleDown(aw)
 				}
 			} else {
 				klog.Infof("Appwrapper deleted scale-down machineset: %s ", aw.Name)
 				scaleDown(aw)
 			}
 		} else {
-			deleteMachinepool(aw)
+			deleteMachinePool(aw)
 		}
 	}
-
-}
-
-func deleteMachinepool(aw *arbv1.AppWrapper) {
-	clusterID := ""
-	token := ""
-	logger, err := sdk.NewGoLoggerBuilder().
-		Debug(true).
-		Build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build logger: %v\n", err)
-		os.Exit(1)
-	}
-	connection, err := sdk.NewConnectionBuilder().
-		Logger(logger).
-		Tokens(token).
-		Build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build connection: %v\n", err)
-		os.Exit(1)
-	}
-	defer connection.Close()
-	machinePoolsConnection := connection.ClustersMgmt().V1().Clusters().Cluster(clusterID).MachinePools().List()
-
-	machinePoolsListResponse, _ := machinePoolsConnection.Send()
-	machinePoolsList := machinePoolsListResponse.Items()
-	machinePoolsList.Range(func(index int, item *cmv1.MachinePool) bool {
-		fmt.Println(item.GetID())
-		id, _ := item.GetID()
-		//As a test update every replicas to 2
-		//Need to run this code to actual API to make it run
-		if aw.Name == id {
-			targetMachinePool, err := connection.ClustersMgmt().V1().Clusters().Cluster("cluster-id").MachinePools().MachinePool(aw.Name).Delete().SendContext(context.Background())
-			if err != nil {
-				klog.Infof("Error deleting target machinepool %v", targetMachinePool)
-			}
-		}
-		return true
-	})
 }
 
 func scaleDown(aw *arbv1.AppWrapper) {
@@ -444,7 +401,7 @@ func scaleDown(aw *arbv1.AppWrapper) {
 		deleteMachineSet(aw)
 	}
 
-	//make a seperate slice
+	//make a separate slice
 	for idx := range scaledAppwrapper {
 		if scaledAppwrapper[idx] == aw.Name {
 			scaledAppwrapper[idx] = ""
