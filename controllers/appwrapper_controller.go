@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	sdk "github.com/openshift-online/ocm-sdk-go"
+	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
 	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
 	"github.com/openshift/client-go/machine/listers/machine/v1beta1"
@@ -55,6 +57,7 @@ type AppWrapperReconciler struct {
 //var nodeCache []string
 var scaledAppwrapper []string
 var reuse bool = true
+var machineset bool = true
 
 const (
 	namespaceToList = "openshift-machine-api"
@@ -282,11 +285,42 @@ func scaleUp(aw *arbv1.AppWrapper, demandMapPerInstanceType map[string]int) {
 		for userRequestedInstanceType := range demandMapPerInstanceType {
 			//TODO: get unique machineset
 			replicas := demandMapPerInstanceType[userRequestedInstanceType]
-			scaleMachineSet(aw, userRequestedInstanceType, replicas)
+			if machineset {
+				scaleMachineSet(aw, userRequestedInstanceType, replicas)
+			} else {
+				scaleMachinepool(aw, userRequestedInstanceType, replicas)
+			}
 		}
 		klog.Infof("Completed Scaling for %v", aw.Name)
 		scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 	}
+
+}
+
+func scaleMachinepool(aw *arbv1.AppWrapper, userRequestedInstanceType string, replicas int) {
+	logger, err := sdk.NewGoLoggerBuilder().
+		Debug(true).
+		Build()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Can't build logger: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Create the connection, and remember to close it:
+	token := ""
+	connection, err := sdk.NewConnectionBuilder().
+		Logger(logger).
+		Tokens(token).
+		Build()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Can't build connection: %v\n", err)
+		os.Exit(1)
+	}
+	defer connection.Close()
+	m := make(map[string]string)
+	m[aw.Name] = aw.Name
+	createMachinePool, _ := cmv1.NewMachinePool().ID(aw.Name).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
+	klog.Info("Create machinepool with instance type %v and name %v", userRequestedInstanceType, createMachinePool)
 
 }
 
@@ -527,20 +561,23 @@ func swapNodeLabels(oldAw *arbv1.AppWrapper, newAw *arbv1.AppWrapper) {
 func onDelete(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
-		if reuse {
-			matchedAw := findExactMatch(aw)
-			if matchedAw != nil {
-				klog.Infof("Appwrapper %s deleted, swapping machines to %s", aw.Name, matchedAw.Name)
-				swapNodeLabels(aw, matchedAw)
+		if machineset {
+			if reuse {
+				matchedAw := findExactMatch(aw)
+				if matchedAw != nil {
+					klog.Infof("Appwrapper %s deleted, swapping machines to %s", aw.Name, matchedAw.Name)
+					swapNodeLabels(aw, matchedAw)
+				} else {
+					klog.Infof("Appwrapper %s deleted, scaling down machines", aw.Name)
+					scaleDown((aw))
+				}
 			} else {
-				klog.Infof("Appwrapper %s deleted, scaling down machines", aw.Name)
-				scaleDown((aw))
+				klog.Infof("Appwrapper deleted scale-down machineset: %s ", aw.Name)
+				scaleDown(aw)
 			}
 		} else {
-			klog.Infof("Appwrapper deleted scale-down machineset: %s ", aw.Name)
-			scaleDown(aw)
+			deleteMachinepool(aw)
 		}
-
 	}
 
 }
@@ -558,6 +595,44 @@ func deleteMachineSet(aw *arbv1.AppWrapper) {
 			}
 		}
 	}
+}
+
+func deleteMachinepool(aw *arbv1.AppWrapper) {
+	clusterID := ""
+	token := ""
+	logger, err := sdk.NewGoLoggerBuilder().
+		Debug(true).
+		Build()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Can't build logger: %v\n", err)
+		os.Exit(1)
+	}
+	connection, err := sdk.NewConnectionBuilder().
+		Logger(logger).
+		Tokens(token).
+		Build()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Can't build connection: %v\n", err)
+		os.Exit(1)
+	}
+	defer connection.Close()
+	machinePoolsConnection := connection.ClustersMgmt().V1().Clusters().Cluster(clusterID).MachinePools().List()
+
+	machinePoolsListResponse, _ := machinePoolsConnection.Send()
+	machinePoolsList := machinePoolsListResponse.Items()
+	machinePoolsList.Range(func(index int, item *cmv1.MachinePool) bool {
+		fmt.Println(item.GetID())
+		id, _ := item.GetID()
+		//As a test update every replicas to 2
+		//Need to run this code to actual API to make it run
+		if aw.Name == id {
+			targetMachinePool, err := connection.ClustersMgmt().V1().Clusters().Cluster("cluster-id").MachinePools().MachinePool(aw.Name).Delete().SendContext(context.Background())
+			if err != nil {
+				klog.Infof("Error deleting target machinepool %v", targetMachinePool)
+			}
+		}
+		return true
+	})
 }
 
 func annotateToDeleteMachine(aw *arbv1.AppWrapper) {
