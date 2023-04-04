@@ -19,9 +19,8 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"strconv"
-
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,7 +48,8 @@ import (
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
+	Scheme             *runtime.Scheme
+	ConfigmapNamespace string
 }
 
 //var nodeCache []string
@@ -118,17 +118,21 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	informer := factory.Machine().V1beta1().MachineSets().Informer()
 	msLister = factory.Machine().V1beta1().MachineSets().Lister()
 	machineLister = factory.Machine().V1beta1().Machines().Lister()
-	nodesTobeadded, err := kubeClient.CoreV1().ConfigMaps("kube-system").Get(ctx, "instascale-config", metav1.GetOptions{})
+	instascaleConfigs, err := kubeClient.CoreV1().ConfigMaps(r.ConfigmapNamespace).Get(ctx, "instascale-config", metav1.GetOptions{})
 	if err != nil {
-		klog.Infof("Config map named instascale-config is not available in namespace kube-system")
+		klog.Infof("Config map named instascale-config is not available in namespace %v", r.ConfigmapNamespace)
 	}
-	for _, v := range nodesTobeadded.Data {
-		if maxScaleNodesAllowed, err = strconv.Atoi(v); err != nil {
-			klog.Infof("Error configuring value of configmap %v using value  3", maxScaleNodesAllowed)
-			maxScaleNodesAllowed = 3
+
+	for key, value := range instascaleConfigs.Data {
+		if key == "maxScaleoutAllowed" {
+			if maxScaleNodesAllowed, err = strconv.Atoi(value); err != nil {
+				klog.Infof("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
+				maxScaleNodesAllowed = 3
+			}
 		}
 	}
-	klog.Infof("Got config map named: %v that configures max nodes in cluster to value %v", nodesTobeadded.Name, maxScaleNodesAllowed)
+	klog.Infof("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigs.Name, instascaleConfigs.Namespace, maxScaleNodesAllowed)
+
 	stopper := make(chan struct{})
 	defer close(stopper)
 	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
