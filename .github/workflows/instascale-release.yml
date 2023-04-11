@@ -1,6 +1,6 @@
 # This workflow will build an image for the instascale-controller, then push the image to the `project-codeflare` quay repo
 
-name: Image
+name: InstaScale Release
 
 on:
   workflow_dispatch:
@@ -33,5 +33,5 @@ jobs:
 
     - name: Image Push
       run: |
-        make image-push -e IMG=quay.io/project-codeflare/codeflare-operator:v${{ env.tag }}
-        make image-push -e IMG=quay.io/project-codeflare/codeflare-operator:latest
+        make image-push -e IMG=quay.io/project-codeflare/instascale-controller:v${{ env.tag }}
+        make image-push -e IMG=quay.io/project-codeflare/instascale-controller:latest
