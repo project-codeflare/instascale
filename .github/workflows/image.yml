@@ -20,7 +20,7 @@ jobs:
 
     - name: Image Build
       run: |
-        make docker-build
+        make image-build -e ENGINE=docker
       env: 
         IMG: quay.io/project-codeflare/instascale-controller:v${{ env.tag }}
 
@@ -33,13 +33,13 @@ jobs:
 
     - name: Image Push
       run: |
-        make docker-push
+        make image-push -e ENGINE=docker
       env:
         IMG: quay.io/project-codeflare/instascale-controller:v${{ env.tag }}
 
     - name: Image Push (Latest Tag)
       run: |
         docker tag quay.io/project-codeflare/instascale-controller:v${{ env.tag }} $IMG
-        make docker-push
+        make image-push -e ENGINE=docker
       env:
         IMG: quay.io/project-codeflare/instascale-controller:latest
