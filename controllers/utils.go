@@ -85,7 +85,7 @@ func NewClientBuilder(kubeconfig string) (*ClientBuilder, error) {
 	}, nil
 }
 
-//This function is changed from genericresource.go file as we force to look for resources under custompodresources.
+// This function is changed from genericresource.go file as we force to look for resources under custompodresources.
 func GetListOfPodResourcesFromOneGenericItem(awr *arbv1.AppWrapperGenericResource) (resource []*clusterstateapi.Resource, er error) {
 	var podResourcesList []*clusterstateapi.Resource
 
