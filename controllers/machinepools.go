@@ -3,15 +3,17 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
+
 	ocmsdk "github.com/openshift-online/ocm-sdk-go"
 	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
+	v1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
 	"github.com/openshift-online/ocm-sdk-go/logging"
 	configv1 "github.com/openshift/api/config/v1"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
-	"os"
-	"strings"
 )
 
 func scaleMachinePool(aw *arbv1.AppWrapper, userRequestedInstanceType string, replicas int) {
@@ -68,16 +70,52 @@ func deleteMachinePool(aw *arbv1.AppWrapper) {
 
 	machinePoolsListResponse, _ := machinePoolsConnection.Send()
 	machinePoolsList := machinePoolsListResponse.Items()
-	machinePoolsList.Range(func(index int, item *cmv1.MachinePool) bool {
-		id, _ := item.GetID()
-		if strings.Contains(id, aw.Name) {
-			targetMachinePool, err := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools().MachinePool(id).Delete().SendContext(context.Background())
-			if err != nil {
-				klog.Infof("Error deleting target machinepool %v", targetMachinePool)
-			}
+
+	if reuse {
+		matchedAw := findExactMatch(aw)
+		if matchedAw != nil {
+			klog.Infof("Appwrapper %s deleted, swapping machines to %s", aw.Name, matchedAw.Name)
+			//implement a seperate method to swap labels and add taints
+			//swapMachinepoolLabels(aw, matchedAw, machinePoolsList)
+			machinePoolsList.Range(func(index int, item *cmv1.MachinePool) bool {
+				fmt.Println(item.GetID())
+				id, _ := item.GetID()
+				if id == aw.Name {
+					targetMachinePool := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools()
+					updatePoolBuilder := cmv1.NewMachinePool().ID(id)
+					m := make(map[string]string)
+					m[id] = id
+					taintBuilders := []*cmv1.TaintBuilder{}
+					taintBuilders = append(taintBuilders, cmv1.NewTaint().Key(matchedAw.Name).Value(matchedAw.Name).Effect("PreferNoSchedule"))
+					updatePoolBuilder = updatePoolBuilder.Labels(m).Taints(taintBuilders...)
+					machinePool, errBuild := updatePoolBuilder.Build()
+					if errBuild != nil {
+						klog.Infof("Error building machinepool build %v", errBuild)
+					}
+					_, err := targetMachinePool.MachinePool(id).Update().Body(machinePool).SendContext(context.Background())
+					if err != nil {
+						klog.Errorf("Error updating the cluster: %v\n", err)
+						//should we crash? or return false?
+					}
+
+				}
+				return true
+			})
+		} else {
+			klog.Infof("Appwrapper %s deleted, scaling down machines", aw.Name)
+			machinePoolsList.Range(func(index int, item *cmv1.MachinePool) bool {
+				id, _ := item.GetID()
+				if strings.Contains(id, aw.Name) {
+					targetMachinePool, err := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools().MachinePool(id).Delete().SendContext(context.Background())
+					if err != nil {
+						klog.Infof("Error deleting target machinepool %v", targetMachinePool)
+					}
+				}
+				return true
+			})
 		}
-		return true
-	})
+	}
+
 }
 
 // getOCMClusterID determines the internal clusterID to be used for OCM API calls
@@ -123,4 +161,34 @@ func getOCMClusterID(r *AppWrapperReconciler) error {
 		return true
 	})
 	return nil
+}
+
+func swapMachinepoolLabels(aw *arbv1.AppWrapper, matchedAw *arbv1.AppWrapper, machinePoollist *cmv1.MachinePoolList) {
+
+	machinePoollist.Range(func(index int, item *v1.MachinePool) bool {
+		fmt.Println(item.GetID())
+		id, _ := item.GetID()
+		if id == "test-mp" {
+			targetMachinePool := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools()
+			// targetMachinePool, _ := targetMachinePool.MachinePool(id).Get().SendContext(context.Background())
+
+			//updatePoolBuilder := v1.NewMachinePool().Copy(item)
+			updatePoolBuilder := v1.NewMachinePool().ID(id)
+			m := make(map[string]string)
+			m["update2"] = "update2"
+			//updatepool, error1 := updatePoolBuilder.Labels(m).InstanceType("").Build()
+			updatePoolBuilder = updatePoolBuilder.Labels(m)
+			machinePool, error1 := updatePoolBuilder.Build()
+			if error1 != nil {
+				klog.Infof("The error is %v", error1)
+			}
+			_, err := targetMachinePool.MachinePool(id).Update().Body(machinePool).SendContext(context.Background())
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Can't update cluster: %v\n", err)
+				os.Exit(1)
+			}
+
+		}
+		return true
+	})
 }
