@@ -8,7 +8,6 @@ import (
 
 	ocmsdk "github.com/openshift-online/ocm-sdk-go"
 	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
-	v1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
 	"github.com/openshift-online/ocm-sdk-go/logging"
 	configv1 "github.com/openshift/api/config/v1"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
@@ -57,6 +56,7 @@ func deleteMachinePool(aw *arbv1.AppWrapper) {
 		fmt.Fprintf(os.Stderr, "Can't build logger: %v\n", err)
 		os.Exit(1)
 	}
+	//move connection setup logic to a single method
 	connection, err := ocmsdk.NewConnectionBuilder().
 		Logger(logger).
 		Tokens(ocmToken).
@@ -161,34 +161,4 @@ func getOCMClusterID(r *AppWrapperReconciler) error {
 		return true
 	})
 	return nil
-}
-
-func swapMachinepoolLabels(aw *arbv1.AppWrapper, matchedAw *arbv1.AppWrapper, machinePoollist *cmv1.MachinePoolList) {
-
-	machinePoollist.Range(func(index int, item *v1.MachinePool) bool {
-		fmt.Println(item.GetID())
-		id, _ := item.GetID()
-		if id == "test-mp" {
-			targetMachinePool := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools()
-			// targetMachinePool, _ := targetMachinePool.MachinePool(id).Get().SendContext(context.Background())
-
-			//updatePoolBuilder := v1.NewMachinePool().Copy(item)
-			updatePoolBuilder := v1.NewMachinePool().ID(id)
-			m := make(map[string]string)
-			m["update2"] = "update2"
-			//updatepool, error1 := updatePoolBuilder.Labels(m).InstanceType("").Build()
-			updatePoolBuilder = updatePoolBuilder.Labels(m)
-			machinePool, error1 := updatePoolBuilder.Build()
-			if error1 != nil {
-				klog.Infof("The error is %v", error1)
-			}
-			_, err := targetMachinePool.MachinePool(id).Update().Body(machinePool).SendContext(context.Background())
-			if err != nil {
-				fmt.Fprintf(os.Stderr, "Can't update cluster: %v\n", err)
-				os.Exit(1)
-			}
-
-		}
-		return true
-	})
 }
