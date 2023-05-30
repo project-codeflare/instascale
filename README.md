@@ -52,3 +52,20 @@ go test -v ./controllers/
 
 ```
 
+## Release process
+
+1. Update [go.mod](https://github.com/project-codeflare/instascale/blob/main/go.mod)/[go.sum](https://github.com/project-codeflare/instascale/blob/main/go.sum) with newest dependency version of multi-cluster-app-dispatcher:
+
+```
+go get github.com/project-codeflare/multi-cluster-app-dispatcher
+``` 
+
+2. Update version in [VERSION file](https://github.com/project-codeflare/instascale/blob/main/VERSION) to the new release version. Once VERSION file change is merged then [instascale-release.yml](https://github.com/project-codeflare/instascale/actions/workflows/instascale-release.yml) and [go.yml](https://github.com/project-codeflare/instascale/actions/workflows/go.yml) actions are invoked.
+
+> **Note**
+> The VERSION file is going to be removed as part of Instascale release process automation.
+
+3. Verify that [instascale-release.yml](https://github.com/project-codeflare/instascale/actions/workflows/instascale-release.yml) action passed successfully.
+4. Verify that [go.yml](https://github.com/project-codeflare/instascale/actions/workflows/go.yml) action passed successfully.
+5. Create a new release on [release page](https://github.com/project-codeflare/instascale/releases). Provide a tag with same value as in VERSION file formated as semver (with `v` prefix). Provide proper release title and description.
+
