@@ -50,3 +50,10 @@ rules:
   - update 
   - delete
   - patch
+
+- apiGroups:
+  - ""
+  resources:
+    - secrets
+  verbs:
+    - get
