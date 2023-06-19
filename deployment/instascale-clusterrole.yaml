@@ -59,3 +59,11 @@ rules:
     - secrets
   verbs:
     - get
+
+- apiGroups:
+    - config.openshift.io
+  resources:
+    - clusterversions
+  verbs:
+    - get
+    - list
