@@ -25,4 +25,15 @@ spec:
           requests:
             cpu: "2"
             memory: "2G"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            periodSeconds: 5
+            timeoutSeconds: 5
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            periodSeconds: 10
       serviceAccountName: instascale-sa
