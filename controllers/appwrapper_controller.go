@@ -169,7 +169,7 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if !useMachineSets {
 		instascaleOCMSecret, err := kubeClient.CoreV1().Secrets(r.ConfigsNamespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
 		if err != nil {
-			klog.Infof("Error getting instascale-ocm-secret from namespace %v - Error :  %v", r.ConfigsNamespace, err)
+			klog.Errorf("Error getting instascale-ocm-secret from namespace %v - Error :  %v", r.ConfigsNamespace, err)
 		}
 		ocmToken = string(instascaleOCMSecret.Data["token"])
 	}
