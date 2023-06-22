@@ -8,7 +8,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-func TestDiscoverInstanceTypes(t *testing.T) {
+func (r *AppWrapperReconciler) TestDiscoverInstanceTypes(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
 	tests := []struct {
@@ -99,7 +99,7 @@ func TestDiscoverInstanceTypes(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := discoverInstanceTypes(test.input)
+			result := r.discoverInstanceTypes(test.input)
 			g.Expect(result).To(gomega.Equal(test.expected))
 		})
 	}
