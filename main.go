@@ -30,16 +30,19 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
+	machinev1beta1 "github.com/openshift/api/machine/v1beta1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/project-codeflare/instascale/controllers"
 	"github.com/project-codeflare/instascale/pkg/config"
+
 	// +kubebuilder:scaffold:imports
 	mcadv1beta1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 )
@@ -56,8 +59,8 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(configv1.Install(scheme))
-
-	// +kubebuilder:scaffold:scheme
+	utilruntime.Must(machinev1beta1.Install(scheme))
+	//+kubebuilder:scaffold:scheme
 	_ = mcadv1beta1.AddToScheme(scheme)
 }
 

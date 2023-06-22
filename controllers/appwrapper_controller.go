@@ -19,55 +19,39 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
-	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
-	machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
-	"github.com/openshift/client-go/machine/listers/machine/v1beta1"
 	"github.com/project-codeflare/instascale/pkg/config"
-
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
-	appwrapperClientSet "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/clientset/versioned"
-	arbinformersFactory "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/informers/externalversions"
-	appwrapperlisters "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/listers/controller/v1beta1"
-
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
 
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
 	client.Client
-	Scheme *runtime.Scheme
-	Config config.InstaScaleConfiguration
+	Scheme     *runtime.Scheme
+	Config     config.InstaScaleConfiguration
+	kubeClient *kubernetes.Clientset
 }
 
 var (
-	scaledAppwrapper []string
-	reuse            = true
-	ocmClusterID     string
-	ocmToken         string
-	useMachineSets   bool
-
+	scaledAppwrapper     []string
+	reuse                = true
+	ocmClusterID         string
+	ocmToken             string
+	useMachineSets       bool
 	maxScaleNodesAllowed int
-	msLister             v1beta1.MachineSetLister
-	machineLister        v1beta1.MachineLister
-	msInformerHasSynced  bool
-	machineClient        mapiclientset.Interface
-	queueJobLister       appwrapperlisters.AppWrapperLister
-	kubeClient           *kubernetes.Clientset
 )
 
 const (
@@ -75,6 +59,7 @@ const (
 	minResyncPeriod   = 10 * time.Minute
 	pullSecretKey     = ".dockerconfigjson"
 	pullSecretAuthKey = "cloud.openshift.com"
+	finalizerName     = "instascale.codeflare.dev/finalizer"
 )
 
 // +kubebuilder:rbac:groups=workload.codeflare.dev,resources=appwrappers,verbs=get;list;watch;create;update;patch;delete
@@ -100,8 +85,14 @@ const (
 func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 
 	_ = log.FromContext(ctx)
-
+	// todo: Move the getOCMClusterID call out of reconcile loop.
+	// Only reason we are calling it here is that the client is not able to make
+	// calls until it is started, so SetupWithManager is not working.
+	if !useMachineSets && ocmClusterID == "" {
+		getOCMClusterID(r)
+	}
 	var appwrapper arbv1.AppWrapper
+
 	if err := r.Get(ctx, req.NamespacedName, &appwrapper); err != nil {
 		if apierrors.IsNotFound(err) {
 			// ignore not-found errors, since we can get them on delete requests.
@@ -110,56 +101,90 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		klog.Error(err, "unable to fetch appwrapper")
 	}
 
-	factory := machineinformersv1beta1.NewSharedInformerFactoryWithOptions(machineClient, resyncPeriod()(), machineinformersv1beta1.WithNamespace(""))
-	informer := factory.Machine().V1beta1().MachineSets().Informer()
-	msLister = factory.Machine().V1beta1().MachineSets().Lister()
-	machineLister = factory.Machine().V1beta1().Machines().Lister()
-
-	// todo: Move the getOCMClusterID call out of reconcile loop.
-	// Only reason we are calling it here is that the client is not able to make
-	// calls until it is started, so SetupWithManager is not working.
-	if !useMachineSets && ocmClusterID == "" {
-		getOCMClusterID(r)
+	// Adds finalizer to the appwrapper if it doesn't exist
+	if !controllerutil.ContainsFinalizer(&appwrapper, finalizerName) {
+		controllerutil.AddFinalizer(&appwrapper, finalizerName)
+		if err := r.Update(ctx, &appwrapper); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
 	}
 
-	stopper := make(chan struct{})
-	defer close(stopper)
-	informer.AddEventHandler(cache.ResourceEventHandlerFuncs{
-		AddFunc:    onAdd,
-		UpdateFunc: onUpdate,
-		DeleteFunc: onDelete,
-	})
-	go informer.Run(stopper)
-	if !cache.WaitForCacheSync(stopper, informer.HasSynced) {
-		klog.Info("Wait for cache to sync")
+	if !appwrapper.ObjectMeta.DeletionTimestamp.IsZero() {
+		if err := r.finalizeScalingDownMachines(ctx, &appwrapper); err != nil {
+			return ctrl.Result{}, err
+		}
+		controllerutil.RemoveFinalizer(&appwrapper, finalizerName)
+		if err := r.Update(ctx, &appwrapper); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, nil
 	}
-	// TODO: do we need dual sync??
-	msInformerHasSynced = informer.HasSynced()
-	addAppwrappersThatNeedScaling()
-	<-stopper
-	return ctrl.Result{}, nil
+
+	//TODO Investigate isAWPending()
+	demandPerInstanceType := r.discoverInstanceTypes(&appwrapper)
+	//for userRequestedInstanceType := range demandPerInstanceType {
+	if useMachineSets {
+		if reuse {
+			res, err := r.reconcileReuseMachineSet(ctx, &appwrapper, demandPerInstanceType)
+			if err != nil {
+				klog.Infof("Error reconciling MachineSet: %s", err)
+			}
+			return res, nil
+		} else {
+			res, err := r.reconcileCreateMachineSet(ctx, &appwrapper, demandPerInstanceType)
+			if err != nil {
+				klog.Infof("Error reconciling MachineSet: %s", err)
+			}
+			return res, nil
+		}
+	} else {
+		res, err := r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
+		if err != nil {
+			klog.Infof("Error reconciling MachinePool: %s", err)
+		}
+		return res, nil
+	}
+}
+
+func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, appwrapper *arbv1.AppWrapper) error {
+	if useMachineSets {
+		if reuse {
+			matchedAw := r.findExactMatch(ctx, appwrapper)
+			if matchedAw != nil {
+				klog.Infof("Appwrapper %s deleted, swapping machines to %s", appwrapper.Name, matchedAw.Name)
+				r.swapNodeLabels(ctx, appwrapper, matchedAw)
+			} else {
+				klog.Infof("Appwrapper %s deleted, scaling down machines", appwrapper.Name)
+
+				r.scaleDown(ctx, appwrapper)
+			}
+		} else {
+			klog.Infof("Appwrapper deleted scale-down machineset: %s ", appwrapper.Name)
+			r.scaleDown(ctx, appwrapper)
+		}
+	} else {
+		r.deleteMachinePool(ctx, appwrapper)
+	}
+	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	cb, err := NewClientBuilder(kubeconfig)
-	if err != nil {
-		klog.Fatalf("Error creating clients: %v", err)
-	}
-	restConfig, err := getRestConfig(kubeconfig)
-	if err != nil {
-		klog.Info("Failed to get rest config")
-	}
 
-	machineClient = cb.MachineClientOrDie("machine-shared-informer")
-	kubeClient, _ = kubernetes.NewForConfig(restConfig)
+	restConfig := mgr.GetConfig()
+
+	var err error
+	r.kubeClient, err = kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		return err
+	}
 
 	maxScaleNodesAllowed = int(r.Config.MaxScaleoutAllowed)
 
 	useMachineSets = true
 	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
-		if ocmSecret, err := getOCMSecret(ocmSecretRef); err != nil {
+		if ocmSecret, err := r.getOCMSecret(ocmSecretRef); err != nil {
 			return fmt.Errorf("error reading OCM Secret from ref %q: %w", ocmSecretRef, err)
 		} else if token := ocmSecret.Data["token"]; len(token) > 0 {
 			ocmToken = string(token)
@@ -179,95 +204,24 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func getOCMSecret(secretRef *corev1.SecretReference) (*corev1.Secret, error) {
-	return kubeClient.CoreV1().Secrets(secretRef.Namespace).Get(context.Background(), secretRef.Name, metav1.GetOptions{})
+func (r *AppWrapperReconciler) getOCMSecret(secretRef *corev1.SecretReference) (*corev1.Secret, error) {
+	return r.kubeClient.CoreV1().Secrets(secretRef.Namespace).Get(context.Background(), secretRef.Name, metav1.GetOptions{})
 }
 
-func addAppwrappersThatNeedScaling() {
-	kubeconfig := os.Getenv("KUBECONFIG")
-	restConfig, err := getRestConfig(kubeconfig)
+func (r *AppWrapperReconciler) ocmSecretExists(namespace string) bool {
+	instascaleOCMSecret, err := r.kubeClient.CoreV1().Secrets(namespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
 	if err != nil {
-		klog.Fatalf("Error getting config: %v", err)
+		klog.Errorf("Error getting instascale-ocm-secret from namespace %v: %v", namespace, err)
+		klog.Infof("If you are looking to use OCM, ensure that the 'instascale-ocm-secret' secret is available on the cluster within namespace %v", namespace)
+		klog.Infof("Setting useMachineSets to %v.", useMachineSets)
+		return false
 	}
-	awJobClient, err := appwrapperClientSet.NewForConfig(restConfig)
-	if err != nil {
-		klog.Fatalf("Error creating client: %v", err)
-	}
-	queueJobInformer := arbinformersFactory.NewSharedInformerFactory(awJobClient, 0).Workload().V1beta1().AppWrappers()
-	queueJobInformer.Informer().AddEventHandler(
-		cache.FilteringResourceEventHandler{
-			FilterFunc: func(obj interface{}) bool {
-				switch t := obj.(type) {
-				case *arbv1.AppWrapper:
-					klog.V(10).Infof("[getDispatchedAppWrappers] Filtered name=%s/%s",
-						t.Namespace, t.Name)
-					return true
-				default:
-					return false
-				}
-			},
-			Handler: cache.ResourceEventHandlerFuncs{
-				AddFunc:    onAdd,
-				UpdateFunc: onUpdate,
-				DeleteFunc: onDelete,
-			},
-		})
-	queueJobLister = queueJobInformer.Lister()
-	queueJobSynced := queueJobInformer.Informer().HasSynced
-	stopCh := make(chan struct{})
-	defer close(stopCh)
-	go queueJobInformer.Informer().Run(stopCh)
-	cache.WaitForCacheSync(stopCh, queueJobSynced)
-	<-stopCh
+
+	ocmToken = string(instascaleOCMSecret.Data["token"])
+	return true
 }
 
-// onAdd is the function executed when the kubernetes informer notified the
-// presence of a new kubernetes node in the cluster
-func onAdd(obj interface{}) {
-	aw, ok := obj.(*arbv1.AppWrapper)
-	if ok {
-		klog.Infof("Found Appwrapper named %s that has status %v", aw.Name, aw.Status.State)
-		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" && aw.Labels["orderedinstance"] != "" {
-			// scaledAppwrapper = append(scaledAppwrapper, aw.Name)
-			demandPerInstanceType := discoverInstanceTypes(aw)
-
-			if demandPerInstanceType != nil {
-				if (useMachineSets && canScaleMachineset(demandPerInstanceType)) || (!useMachineSets && canScaleMachinepool(demandPerInstanceType)) {
-					scaleUp(aw, demandPerInstanceType)
-				} else {
-					klog.Infof("Cannot scale up replicas. The maximum allowed replicas is %v", maxScaleNodesAllowed)
-				}
-			}
-		}
-	}
-}
-
-func onUpdate(old, new interface{}) {
-	aw, ok := new.(*arbv1.AppWrapper)
-	if ok {
-		status := aw.Status.State
-		if status == "Completed" {
-			klog.Info("Job completed, deleting resources owned")
-			deleteMachineSet(aw)
-		}
-
-		if contains(scaledAppwrapper, aw.Name) {
-			return
-		}
-
-		pending, aw := IsAwPending()
-		if pending {
-			demandPerInstanceType := discoverInstanceTypes(aw)
-			if canScaleMachineset(demandPerInstanceType) {
-				scaleUp(aw, demandPerInstanceType)
-			} else {
-				klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
-			}
-		}
-	}
-}
-
-func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
+func (r *AppWrapperReconciler) discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
 	demandMapPerInstanceType := make(map[string]int)
 	var instanceRequired []string
 	for k, v := range aw.Labels {
@@ -281,13 +235,11 @@ func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
 		return demandMapPerInstanceType
 	}
 
-	klog.Infof("The instanceRequired array: %v", instanceRequired)
 	for id, genericItem := range aw.Spec.AggrResources.GenericItems {
 		for idx, val := range genericItem.CustomPodResources {
 			combinedIndex := idx + id
 			if combinedIndex < len(instanceRequired) {
 				instanceName := instanceRequired[combinedIndex]
-				klog.Infof("Got instance name %v", instanceName)
 				demandMapPerInstanceType[instanceName] = val.Replicas
 			}
 		}
@@ -299,32 +251,14 @@ func canScaleMachinepool(demandPerInstanceType map[string]int) bool {
 	return true
 }
 
-func scaleUp(aw *arbv1.AppWrapper, demandMapPerInstanceType map[string]int) {
-	if msInformerHasSynced {
-		// Assumption is made that the cluster has machineset configure that AW needs
-		for userRequestedInstanceType := range demandMapPerInstanceType {
-			// TODO: get unique machineset
-			replicas := demandMapPerInstanceType[userRequestedInstanceType]
-
-			if useMachineSets {
-				scaleMachineSet(aw, userRequestedInstanceType, replicas)
-			} else {
-				scaleMachinePool(aw, userRequestedInstanceType, replicas)
-			}
-		}
-		klog.Infof("Completed Scaling for %v", aw.Name)
-		scaledAppwrapper = append(scaledAppwrapper, aw.Name)
-	}
-}
-
-func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
-	queuedJobs, err := queueJobLister.AppWrappers("").List(labels.Everything())
+func (r *AppWrapperReconciler) IsAwPending(ctx context.Context) (false bool, aw *arbv1.AppWrapper) {
+	queuedJobs := arbv1.AppWrapperList{}
+	err := r.List(ctx, &queuedJobs)
 	if err != nil {
 		klog.Fatalf("Error listing: %v", err)
 	}
-
-	for _, aw := range queuedJobs {
-		// skip
+	for _, aw := range queuedJobs.Items {
+		//skip
 		if contains(scaledAppwrapper, aw.Name) {
 			continue
 		}
@@ -334,7 +268,7 @@ func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
 		for _, condition := range allconditions {
 			if status == "Pending" && strings.Contains(condition.Message, "Insufficient") {
 				klog.Infof("Pending AppWrapper %v needs scaling", aw.Name)
-				return true, aw
+				return true, &aw
 			}
 		}
 	}
@@ -342,9 +276,10 @@ func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
 }
 
 // add logic to check for matching pending AppWrappers
-func findExactMatch(aw *arbv1.AppWrapper) *arbv1.AppWrapper {
+func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.AppWrapper) *arbv1.AppWrapper {
 	var match *arbv1.AppWrapper = nil
-	allAw, err := queueJobLister.List(labels.Everything())
+	appwrappers := arbv1.AppWrapperList{}
+	err := r.List(ctx, &appwrappers)
 	if err != nil {
 		klog.Error("Cannot list queued appwrappers, associated machines will be deleted")
 		return match
@@ -357,47 +292,28 @@ func findExactMatch(aw *arbv1.AppWrapper) *arbv1.AppWrapper {
 		}
 	}
 
-	for _, eachAw := range allAw {
+	for _, eachAw := range appwrappers.Items {
 		if eachAw.Status.State != "Pending" {
 			continue
 		}
-		if eachAw.Labels["orderedinstance"] == existingAcquiredMachineTypes {
-			match = eachAw
-			klog.Infof("Found exact match, %v appwrapper has acquired machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
+		for k, v := range eachAw.Labels {
+			if k == "orderedinstance" {
+				if v == existingAcquiredMachineTypes {
+					match = &eachAw
+					klog.Infof("Found exact match, %v appwrapper has acquire machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
+				}
+			}
 		}
 	}
 	return match
 
 }
 
-func onDelete(obj interface{}) {
-	aw, ok := obj.(*arbv1.AppWrapper)
-	if ok {
-		if useMachineSets {
-			if reuse {
-				matchedAw := findExactMatch(aw)
-				if matchedAw != nil {
-					klog.Infof("Appwrapper %s deleted, swapping machines to %s", aw.Name, matchedAw.Name)
-					swapNodeLabels(aw, matchedAw)
-				} else {
-					klog.Infof("Appwrapper %s deleted, scaling down machines", aw.Name)
-					scaleDown(aw)
-				}
-			} else {
-				klog.Infof("Appwrapper deleted scale-down machineset: %s ", aw.Name)
-				scaleDown(aw)
-			}
-		} else {
-			deleteMachinePool(aw)
-		}
-	}
-}
-
-func scaleDown(aw *arbv1.AppWrapper) {
+func (r *AppWrapperReconciler) scaleDown(ctx context.Context, aw *arbv1.AppWrapper) {
 	if reuse {
-		annotateToDeleteMachine(aw)
+		r.annotateToDeleteMachine(ctx, aw)
 	} else {
-		deleteMachineSet(aw)
+		r.deleteMachineSet(ctx, aw)
 	}
 
 	// make a separate slice
@@ -407,9 +323,9 @@ func scaleDown(aw *arbv1.AppWrapper) {
 		}
 	}
 
-	pending, aw := IsAwPending()
+	pending, aw := r.IsAwPending(ctx)
 	if pending {
-		demandPerInstanceType := discoverInstanceTypes(aw)
-		scaleUp(aw, demandPerInstanceType)
+		//demandPerInstanceType := r.discoverInstanceTypes(aw)
+		//r.scaleUp(ctx, aw, demandPerInstanceType)
 	}
 }
