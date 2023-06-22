@@ -6,15 +6,13 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag'
+        description: 'Release tag (for example: v0.0.0)'
         required: true
-        default: 'v0.0.0-dev'
       mcad-version:
-        description: 'Published version of multi-cluster-app-dispatcher to be used as a dependency for InstaScale'
+        description: 'Published version of multi-cluster-app-dispatcher to be used as a dependency for InstaScale (for example: v0.0.0)'
         required: true
-        default: 'v0.0.0-dev'
-      is-latest:
-        description: 'Select if the built image should be tagged as latest'
+      is-stable:
+        description: 'Select if the built image should be tagged as stable'
         required: true
         type: boolean
       quay-organization:
@@ -32,6 +30,18 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+
+    - name: Verify that release doesn't exist yet
+      shell: bash {0}
+      run: |
+        gh release view ${{ github.event.inputs.tag }}
+        status=$?
+        if [[ $status -eq 0 ]]; then
+          echo "Release ${{ github.event.inputs.tag }} already exists."
+          exit 1
+        fi
+      env:
+        GITHUB_TOKEN: ${{ github.TOKEN }}
 
     - name: Set up Go
       uses: actions/setup-go@v3
@@ -59,11 +69,11 @@ jobs:
       run: |
         make image-build -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }}
         make image-push -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }}
-    - name: Image Push as latest tag
-      if: ${{ inputs.is-latest }}
+    - name: Image Push as stable tag
+      if: ${{ inputs.is-stable }}
       run: |
-        podman tag quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }} quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:latest
-        make image-push -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:latest
+        podman tag quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }} quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:stable
+        make image-push -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:stable
 
     # Update dependencies
     - name: Commit go.mod and go.sum changes back to repository
@@ -75,7 +85,7 @@ jobs:
     # Create a release in InstaScale
     - name: Creates a release in GitHub
       run: |
-        gh release create ${{ github.event.inputs.tag }} --generate-notes
+        gh release create ${{ github.event.inputs.tag }} --target ${{ github.ref }} --generate-notes
       env:
         GITHUB_TOKEN: ${{ github.TOKEN }}
       shell: bash
