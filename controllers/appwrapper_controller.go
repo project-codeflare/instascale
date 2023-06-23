@@ -273,23 +273,25 @@ func onUpdate(old, new interface{}) {
 }
 
 func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
-	demandMapPerInstanceType := make(map[string]int)
-	var instanceRequired []string
-	for k, v := range aw.Labels {
-		if k == "orderedinstance" {
-			instanceRequired = strings.Split(v, "_")
-		}
-	}
-	klog.Infof("The instanceRequired array: %v", instanceRequired)
-	for id, genericItem := range aw.Spec.AggrResources.GenericItems {
-		for idx, val := range genericItem.CustomPodResources {
-			instanceName := instanceRequired[idx+id]
-			klog.Infof("Got instance name %v", instanceName)
-			demandMapPerInstanceType[instanceName] = val.Replicas
-
-		}
-	}
-	return demandMapPerInstanceType
+    demandMapPerInstanceType := make(map[string]int)
+    var instanceRequired []string
+    for k, v := range aw.Labels {
+        if k == "orderedinstance" {
+            instanceRequired = strings.Split(v, "_")
+        }
+    }
+    klog.Infof("The instanceRequired array: %v", instanceRequired)
+    for id, genericItem := range aw.Spec.AggrResources.GenericItems {
+        for idx, val := range genericItem.CustomPodResources {
+            combinedIndex := idx + id
+            if combinedIndex < len(instanceRequired) {
+                instanceName := instanceRequired[combinedIndex]
+                klog.Infof("Got instance name %v", instanceName)
+                demandMapPerInstanceType[instanceName] = val.Replicas
+            }
+        }
+    }
+    return demandMapPerInstanceType
 }
 
 func canScaleMachinepool(demandPerInstanceType map[string]int) bool {
