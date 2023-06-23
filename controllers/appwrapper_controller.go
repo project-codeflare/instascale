@@ -47,6 +47,7 @@ type AppWrapperReconciler struct {
 	client.Client
 	Scheme           *runtime.Scheme
 	ConfigsNamespace string
+	OcmSecretNamespace string
 }
 
 var (
@@ -167,9 +168,9 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	if !useMachineSets {
-		instascaleOCMSecret, err := kubeClient.CoreV1().Secrets(r.ConfigsNamespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
+		instascaleOCMSecret, err := kubeClient.CoreV1().Secrets(r.OcmSecretNamespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
 		if err != nil {
-			klog.Errorf("Error getting instascale-ocm-secret from namespace %v - Error :  %v", r.ConfigsNamespace, err)
+			klog.Errorf("Error getting instascale-ocm-secret from namespace %v: %v", r.OcmSecretNamespace, err)
 		}
 		ocmToken = string(instascaleOCMSecret.Data["token"])
 	}
