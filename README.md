@@ -22,7 +22,7 @@ Key features:
 # Development
 
 ## Pre-requisites
--  Installed go version 1.17
+-  Installed go version 1.18
 -  Running OpenShift cluster
 
 ## Building
@@ -51,4 +51,15 @@ Run tests with command:
 go test -v ./controllers/
 
 ```
+
+## Release process
+
+
+Prerequisite:
+- Build and release [MCAD](https://github.com/project-codeflare/multi-cluster-app-dispatcher)
+- Make sure that MCAD version is published on [Go package site](https://pkg.go.dev/github.com/project-codeflare/multi-cluster-app-dispatcher?tab=versions)
+
+
+1. Run [instascale-release.yml](https://github.com/project-codeflare/instascale/actions/workflows/instascale-release.yml) action.
+2. Verify that [instascale-release.yml](https://github.com/project-codeflare/instascale/actions/workflows/instascale-release.yml) action passed successfully.
 

@@ -1,37 +1,82 @@
-# This workflow will build an image for the instascale-controller, then push the image to the `project-codeflare` quay repo
+# This workflow will release the InstaScale repository: build an image for the instascale-controller, then push the image to the `project-codeflare` quay repo
 
 name: InstaScale Release
 
 on:
   workflow_dispatch:
-  push:
-    branches: [ "main" ]
-    paths:
-      - "VERSION"
+    inputs:
+      tag:
+        description: 'Release tag'
+        required: true
+        default: 'v0.0.0-dev'
+      mcad-version:
+        description: 'Published version of multi-cluster-app-dispatcher to be used as a dependency for InstaScale'
+        required: true
+        default: 'v0.0.0-dev'
+      is-latest:
+        description: 'Select if the built image should be tagged as latest'
+        required: true
+        type: boolean
+      quay-organization:
+        description: 'Quay organization used to push the built images to'
+        required: false
+        default: 'project-codeflare'
 
 jobs:
   release:
     runs-on: ubuntu-latest
+
+    # Permission required to create a release
+    permissions:
+      contents: write
+
     steps:
     - uses: actions/checkout@v3
 
-    - name: Grab New Version Tag
-      run: |
-        echo "tag=$(cat VERSION)" >> $GITHUB_ENV
+    - name: Set up Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: 1.18
 
+    - name: Update to specific version of multi-cluster-app-dispatcher dependency
+      run: |
+        go get github.com/project-codeflare/multi-cluster-app-dispatcher@${{ github.event.inputs.mcad-version }}
+
+    # Build and test repository to make sure that MCAD update didn't break anything
+    - name: Build
+      run: go build -o bin/manager main.go
+    - name: Test
+      run: go test -v ./...
+
+    # Build and push the image
     - name: Login to Quay.io
       uses: redhat-actions/podman-login@v1
       with:
         username: ${{ secrets.QUAY_ID }}
         password: ${{ secrets.QUAY_TOKEN }}
         registry: quay.io
-
-    - name: Image Build
+    - name: Image Build and Push
       run: |
-        make image-build -e IMG=quay.io/project-codeflare/instascale-controller:v${{ env.tag }}
-        podman tag quay.io/project-codeflare/instascale-controller:v${{ env.tag }} quay.io/project-codeflare/instascale-controller:latest
-
-    - name: Image Push
+        make image-build -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }}
+        make image-push -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }}
+    - name: Image Push as latest tag
+      if: ${{ inputs.is-latest }}
       run: |
-        make image-push -e IMG=quay.io/project-codeflare/instascale-controller:v${{ env.tag }}
-        make image-push -e IMG=quay.io/project-codeflare/instascale-controller:latest
+        podman tag quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }} quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:latest
+        make image-push -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:latest
+
+    # Update dependencies
+    - name: Commit go.mod and go.sum changes back to repository
+      uses: stefanzweifel/git-auto-commit-action@v4
+      with:
+        commit_message: Update go.mod and go.sum to MCAD ${{ github.event.inputs.mcad-version }}
+        file_pattern: 'go.mod go.sum'
+
+    # Create a release in InstaScale
+    - name: Creates a release in GitHub
+      run: |
+        gh release create ${{ github.event.inputs.tag }} --generate-notes
+      env:
+        GITHUB_TOKEN: ${{ github.TOKEN }}
+      shell: bash
+
