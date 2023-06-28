@@ -64,6 +64,7 @@ var (
 	machineClient        mapiclientset.Interface
 	queueJobLister       v1.AppWrapperLister
 	kubeClient           *kubernetes.Clientset
+	ocmService		OCMService
 )
 
 const (
@@ -111,7 +112,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Only reason we are calling it here is that the client is not able to make
 	// calls until it is started, so SetupWithManager is not working.
 	if !useMachineSets && ocmClusterID == "" {
-		getOCMClusterID(r)
+		ocmService.getOCMClusterID(r)
 	}
 
 	stopper := make(chan struct{})
@@ -152,18 +153,26 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		klog.Infof("Config map named instascale-config is not available in namespace %v", r.ConfigsNamespace)
 	}
 
-	if maxScaleNodesAllowed, err = strconv.Atoi(instascaleConfigmap.Data["maxScaleoutAllowed"]); err != nil {
+	maxScaleNodesAllowed, err = strconv.Atoi(instascaleConfigmap.Data["maxScaleoutAllowed"])
+	if maxScaleNodesAllowed != 0 && err != nil {
 		klog.Infof("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
 		maxScaleNodesAllowed = 3
 	}
-	klog.Infof("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
-
-	useMachineSets = true
-	useMachinePools, err := strconv.ParseBool(instascaleConfigmap.Data["useMachinePools"])
+	if instascaleConfigmap != nil {
+		klog.Infof("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
+	}
+	useMachineSets = false	
+	// make an ocm call - if machine pools are available use them, if not default to machine sets
+	machinePoolExists,err := ocmService.machinePoolExists(&arbv1.AppWrapper{})
 	if err != nil {
-		klog.Infof("Error converting %v to bool. Defaulting to using Machine Sets", useMachineSets)
+		klog.Info("Error checking if machine pool exists")
+	}
+
+	if machinePoolExists {
+		useMachineSets = false
+		klog.Infof("Using machine pools %v", machinePoolExists)
 	} else {
-		useMachineSets = !useMachinePools
+		useMachineSets = true
 		klog.Infof("Setting useMachineSets to %v", useMachineSets)
 	}
 
@@ -224,21 +233,23 @@ func onAdd(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
 		klog.Infof("Found Appwrapper named %s that has status %v", aw.Name, aw.Status.State)
-		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" {
+		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" && aw.Labels != nil {
 			//scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 			demandPerInstanceType := discoverInstanceTypes(aw)
 			//TODO: simplify the looping
-			if useMachineSets {
-				if canScaleMachineset(demandPerInstanceType) {
-					scaleUp(aw, demandPerInstanceType)
+			if demandPerInstanceType != nil {
+				if useMachineSets {
+					if canScaleMachineset(demandPerInstanceType) {
+						scaleUp(aw, demandPerInstanceType)
+					} else {
+						klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
+					}
 				} else {
-					klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
-				}
-			} else {
-				if canScaleMachinepool(demandPerInstanceType) {
-					scaleUp(aw, demandPerInstanceType)
-				} else {
-					klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
+					if canScaleMachinepool(demandPerInstanceType) {
+						scaleUp(aw, demandPerInstanceType)
+					} else {
+						klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
+					}			
 				}
 			}
 
@@ -309,7 +320,7 @@ func scaleUp(aw *arbv1.AppWrapper, demandMapPerInstanceType map[string]int) {
 			if useMachineSets {
 				scaleMachineSet(aw, userRequestedInstanceType, replicas)
 			} else {
-				scaleMachinePool(aw, userRequestedInstanceType, replicas)
+				ocmService.scaleMachinePool(aw, userRequestedInstanceType, replicas)
 			}
 		}
 		klog.Infof("Completed Scaling for %v", aw.Name)
@@ -392,7 +403,7 @@ func onDelete(obj interface{}) {
 				scaleDown(aw)
 			}
 		} else {
-			deleteMachinePool(aw)
+			ocmService.deleteMachinePool(aw)
 		}
 	}
 }
