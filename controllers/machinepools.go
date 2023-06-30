@@ -42,11 +42,14 @@ func scaleMachinePool(aw *arbv1.AppWrapper, userRequestedInstanceType string, re
 	machinePoolID := strings.ReplaceAll(aw.Name+"-"+userRequestedInstanceType, ".", "-")
 	createMachinePool, err := cmv1.NewMachinePool().ID(machinePoolID).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
 	if err != nil {
-		klog.Infof("Error creating machinepool %v", err)
+		klog.Errorf(`Error building MachinePool: %v`, err)
 	}
-
-	klog.Infof("Create machinepool with instance type %v and name %v", userRequestedInstanceType, createMachinePool.ID())
-	clusterMachinePools.Add().Body(createMachinePool).SendContext(context.Background())
+	klog.Infof("Built MachinePool with instance type %v and name %v", userRequestedInstanceType, createMachinePool.ID())
+	response, err := clusterMachinePools.Add().Body(createMachinePool).SendContext(context.Background())
+	if err != nil {
+		klog.Errorf(`Error creating MachinePool: %v`, err)
+	}
+	klog.Infof("Created MachinePool: %v", response)
 }
 
 func deleteMachinePool(aw *arbv1.AppWrapper) {
@@ -118,7 +121,10 @@ func getOCMClusterID(r *AppWrapperReconciler) error {
 	// Get the client for the resource that manages the collection of clusters:
 	collection := connection.ClustersMgmt().V1().Clusters()
 
-	response, _ := collection.List().Search(fmt.Sprintf("external_id = '%s'", internalClusterID)).Size(1).Page(1).SendContext(ctx)
+	response, err := collection.List().Search(fmt.Sprintf("external_id = '%s'", internalClusterID)).Size(1).Page(1).SendContext(ctx)
+	if err != nil {
+		klog.Errorf(`Error getting cluster id: %v`, err)
+	}
 
 	response.Items().Each(func(cluster *cmv1.Cluster) bool {
 		ocmClusterID = cluster.ID()
