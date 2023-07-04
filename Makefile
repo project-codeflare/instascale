@@ -78,16 +78,17 @@ test: manifests generate fmt vet envtest ## Run tests.
 	KUBEBUILDER_ASSETS="$(shell $(ENVTEST) use $(ENVTEST_K8S_VERSION) -p path)" go test ./... -coverprofile cover.out
 	grep -v -e "_moq.go" cover.out > coverage.out
 
-test/output/coverage/report:
-	@if [ -f coverage.out ]; then $(GO) tool cover -func=coverage.out; else echo "coverage.out file not found"; fi;
-.PHONY: test/output/coverage/report
+coverage.out: test
 
-test/html/coverage/report:
-	@if [ -f coverage.out ]; then $(GO) tool cover -html=coverage.out; else echo "coverage.out file not found"; fi;
-.PHONY: test/html/coverage/report
+coverage-report: coverage.out
+	$(GO) tool cover -func=coverage.out
+.PHONY: coverage-report
+
+html-coverage-report: coverage.out
+	$(GO) tool cover -html=coverage.out
+.PHONY: html-coverage-report
 
 ##@ Build
-
 .PHONY: build
 build: generate fmt vet ## Build manager binary.
 	go build -o bin/manager main.go
