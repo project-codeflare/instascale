@@ -40,7 +40,10 @@ func scaleMachinePool(aw *arbv1.AppWrapper, userRequestedInstanceType string, re
 	m[aw.Name] = aw.Name
 
 	machinePoolID := strings.ReplaceAll(aw.Name+"-"+userRequestedInstanceType, ".", "-")
-	createMachinePool, _ := cmv1.NewMachinePool().ID(machinePoolID).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
+	createMachinePool, err := cmv1.NewMachinePool().ID(machinePoolID).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
+	if err != nil {
+		klog.Infof("Error creating machinepool %v", err)
+	}
 
 	klog.Infof("Create machinepool with instance type %v and name %v", userRequestedInstanceType, createMachinePool.ID())
 	clusterMachinePools.Add().Body(createMachinePool).SendContext(context.Background())
