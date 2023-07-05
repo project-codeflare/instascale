@@ -45,8 +45,8 @@ import (
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
 	client.Client
-	Scheme           *runtime.Scheme
-	ConfigsNamespace string
+	Scheme             *runtime.Scheme
+	ConfigsNamespace   string
 	OcmSecretNamespace string
 }
 
@@ -150,20 +150,25 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	instascaleConfigmap, err := kubeClient.CoreV1().ConfigMaps(r.ConfigsNamespace).Get(context.Background(), "instascale-config", metav1.GetOptions{})
 	if err != nil {
 		klog.Infof("Config map named instascale-config is not available in namespace %v", r.ConfigsNamespace)
+		return err
 	}
 
-	if maxScaleNodesAllowed, err = strconv.Atoi(instascaleConfigmap.Data["maxScaleoutAllowed"]); err != nil {
+	maxScaleNodesAllowed, err = strconv.Atoi(instascaleConfigmap.Data["maxScaleoutAllowed"])
+	if err != nil {
 		klog.Infof("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
 		maxScaleNodesAllowed = 3
 	}
-	klog.Infof("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
-
-	useMachineSets = true
-	useMachinePools, err := strconv.ParseBool(instascaleConfigmap.Data["useMachinePools"])
-	if err != nil {
-		klog.Infof("Error converting %v to bool. Defaulting to using Machine Sets", useMachineSets)
+	if instascaleConfigmap != nil {
+		klog.Infof("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
+	}
+	useMachineSets = false
+	// make an ocm call - if machine pools are available use them, if not default to machine sets
+	machinePoolExists := machinePoolExists()
+	if machinePoolExists {
+		useMachineSets = false
+		klog.Infof("Using machine pools %v", machinePoolExists)
 	} else {
-		useMachineSets = !useMachinePools
+		useMachineSets = true
 		klog.Infof("Setting useMachineSets to %v", useMachineSets)
 	}
 
@@ -224,28 +229,27 @@ func onAdd(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
 		klog.Infof("Found Appwrapper named %s that has status %v", aw.Name, aw.Status.State)
-		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" {
+		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" && aw.Labels != nil {
 			//scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 			demandPerInstanceType := discoverInstanceTypes(aw)
 			//TODO: simplify the looping
-			if useMachineSets {
-				if canScaleMachineset(demandPerInstanceType) {
-					scaleUp(aw, demandPerInstanceType)
+			if demandPerInstanceType != nil {
+				if useMachineSets {
+					if canScaleMachineset(demandPerInstanceType) {
+						scaleUp(aw, demandPerInstanceType)
+					} else {
+						klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
+					}
 				} else {
-					klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
-				}
-			} else {
-				if canScaleMachinepool(demandPerInstanceType) {
-					scaleUp(aw, demandPerInstanceType)
-				} else {
-					klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
+					if canScaleMachinepool(demandPerInstanceType) {
+						scaleUp(aw, demandPerInstanceType)
+					} else {
+						klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
+					}
 				}
 			}
-
 		}
-
 	}
-
 }
 
 func onUpdate(old, new interface{}) {

@@ -85,9 +85,9 @@ func main() {
 	}
 
 	if err = (&controllers.AppWrapperReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		ConfigsNamespace: configsNamespace,
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		ConfigsNamespace:   configsNamespace,
 		OcmSecretNamespace: ocmSecretNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AppWrapper")
