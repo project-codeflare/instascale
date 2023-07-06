@@ -86,7 +86,7 @@ func TestDiscoverInstanceTypes(t *testing.T) {
 			expected: map[string]int{},
 		},
 		{
-			name: "Test with empty orderedinstance",
+			name: "Test with no orderedinstance",
 			input: &arbv1.AppWrapper{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{

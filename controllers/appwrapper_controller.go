@@ -155,34 +155,42 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	maxScaleNodesAllowed, err = strconv.Atoi(instascaleConfigmap.Data["maxScaleoutAllowed"])
 	if err != nil {
-		klog.Infof("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
+		klog.Warningf("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
 		maxScaleNodesAllowed = 3
 	}
 	if instascaleConfigmap != nil {
-		klog.Infof("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
-	}
-	useMachineSets = false
-	// make an ocm call - if machine pools are available use them, if not default to machine sets
-	machinePoolExists := machinePoolExists()
-	if machinePoolExists {
-		useMachineSets = false
-		klog.Infof("Using machine pools %v", machinePoolExists)
-	} else {
-		useMachineSets = true
-		klog.Infof("Setting useMachineSets to %v", useMachineSets)
+		klog.Errorf("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
 	}
 
-	if !useMachineSets {
-		instascaleOCMSecret, err := kubeClient.CoreV1().Secrets(r.OcmSecretNamespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
-		if err != nil {
-			klog.Errorf("Error getting instascale-ocm-secret from namespace %v: %v", r.OcmSecretNamespace, err)
+	useMachineSets = true
+	ocmSecretExists := ocmSecretExists(r.OcmSecretNamespace)
+	if ocmSecretExists {
+		machinePoolsExists := machinePoolExists()
+
+		if machinePoolsExists {
+			useMachineSets = false
+			klog.Infof("Using machine pools %v", machinePoolsExists)
+		} else {
+			klog.Infof("Setting useMachineSets to %v", useMachineSets)
 		}
-		ocmToken = string(instascaleOCMSecret.Data["token"])
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&arbv1.AppWrapper{}).
 		Complete(r)
+}
+
+func ocmSecretExists(namespace string) bool {
+	instascaleOCMSecret, err := kubeClient.CoreV1().Secrets(namespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("Error getting instascale-ocm-secret from namespace %v: %v", namespace, err)
+		klog.Infof("If you are looking to use OCM, ensure that the 'instascale-ocm-secret' secret is available on the cluster within namespace %v", namespace)
+		klog.Infof("Setting useMachineSets to %v.", useMachineSets)
+		return false
+	}
+
+	ocmToken = string(instascaleOCMSecret.Data["token"])
+	return true
 }
 
 func addAppwrappersThatNeedScaling() {
@@ -229,7 +237,7 @@ func onAdd(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
 		klog.Infof("Found Appwrapper named %s that has status %v", aw.Name, aw.Status.State)
-		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" && aw.Labels != nil {
+		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" && aw.Labels["orderedinstance"] != "" {
 			//scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 			demandPerInstanceType := discoverInstanceTypes(aw)
 			//TODO: simplify the looping

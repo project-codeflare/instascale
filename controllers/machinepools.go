@@ -104,15 +104,10 @@ func machinePoolExists() bool {
 		os.Exit(1)
 	}
 	defer connection.Close()
-	connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).NodePools().Add()
 
-	clusterMachinePools := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools()
-	klog.Infof("cluster machine pools %v", clusterMachinePools)
-	if clusterMachinePools != nil {
-		klog.Infof("Machine pools are present %v", clusterMachinePools)
-		return true
-	}
-	return false
+	machinePools := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools()
+	klog.Infof("Machine pools: %v", machinePools)
+	return machinePools != nil
 }
 
 // getOCMClusterID determines the internal clusterID to be used for OCM API calls
