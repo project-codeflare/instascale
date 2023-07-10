@@ -24,4 +24,5 @@ testbin/*
 *.swo
 *~
 
-
+# Locall debugging with vscode
+.vscode/*
