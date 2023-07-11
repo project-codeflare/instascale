@@ -25,4 +25,4 @@ testbin/*
 *~
 
 # Locall debugging with vscode
-.vscode/*
+.vscode
