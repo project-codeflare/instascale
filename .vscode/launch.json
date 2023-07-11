@@ -8,9 +8,9 @@
             "request": "launch",
             "mode": "auto",
             "program": "${workspaceFolder}/main.go",
-            "args": [],
+            "args": ["--configs-namespace=opendatahub"],
             "env": {
-                "KUBECONFIG": "<PATH_TO_KUBECONFIG>"
+                "KUBECONFIG": "/home/mark/.kube/config"
             },
             "showLog": true
         }
