@@ -43,7 +43,20 @@ oc apply -f instascale-clusterrole.yaml
 oc apply -f instascale-clusterrolebinding.yaml
 oc apply -f deployment.yaml
 ```
-
+## Running an InstaScale deployment locally with Visual Studio Code
+- Deploy MCAD using steps [here](https://github.com/project-codeflare/multi-cluster-app-dispatcher/blob/main/doc/deploy/deployment.md).
+- Deploy InstaScale by following the steps below:
+```
+git clone https://github.com/project-codeflare/instascale.git
+cd deployment/
+oc apply -f instascale-configmap.yaml
+oc apply -f instascale-sa.yaml
+oc apply -f instascale-clusterrole.yaml
+oc apply -f instascale-clusterrolebinding.yaml
+```
+- In Visual Studio Code update `.vscode/launch.json` so that `"KUBECONFIG"` points to your Kubernetes config file.<br>
+- If you changed the namespace in `instascale-configmap.yaml` update the `args[]` in `launch.json` to include `--configs-namespace="<YOUR_NAMESPACE>"`.<br>
+- You can now run the local deployment with the debugger.
 ## Testing
 
 Run tests with command: 
