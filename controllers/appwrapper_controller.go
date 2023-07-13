@@ -280,13 +280,21 @@ func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
 			instanceRequired = strings.Split(v, "_")
 		}
 	}
+
+	if len(instanceRequired) < 1 {
+		klog.Infof("Found AW %s that cannot be scaled due to missing orderedinstance label", aw.ObjectMeta.Name)
+		return demandMapPerInstanceType
+	}
+
 	klog.Infof("The instanceRequired array: %v", instanceRequired)
 	for id, genericItem := range aw.Spec.AggrResources.GenericItems {
 		for idx, val := range genericItem.CustomPodResources {
-			instanceName := instanceRequired[idx+id]
-			klog.Infof("Got instance name %v", instanceName)
-			demandMapPerInstanceType[instanceName] = val.Replicas
-
+			combinedIndex := idx + id
+			if combinedIndex < len(instanceRequired) {
+				instanceName := instanceRequired[combinedIndex]
+				klog.Infof("Got instance name %v", instanceName)
+				demandMapPerInstanceType[instanceName] = val.Replicas
+			}
 		}
 	}
 	return demandMapPerInstanceType
