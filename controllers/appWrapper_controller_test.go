@@ -1,15 +1,15 @@
 package controllers
 
 import (
-	"testing"
-
 	"github.com/onsi/gomega"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"testing"
 )
 
 func TestDiscoverInstanceTypes(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
+
 	tests := []struct {
 		name        string
 		input       *arbv1.AppWrapper
@@ -73,6 +73,17 @@ func TestDiscoverInstanceTypes(t *testing.T) {
 			expected: map[string]int{
 				"test.instance1": 1,
 			},
+		},
+		{
+			name: "Test with empty orderedinstance",
+			input: &arbv1.AppWrapper{
+				ObjectMeta: metav1.ObjectMeta{
+					Labels: map[string]string{
+						"orderedinstance": "",
+					},
+				},
+			},
+			expected: map[string]int{},
 		},
 		{
 			name: "Test with empty orderedinstance",
