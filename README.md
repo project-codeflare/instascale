@@ -59,18 +59,18 @@ oc apply -f instascale-clusterrolebinding.yaml
 - You can now run the local deployment with the debugger.
 ## Running locally with a OSD cluster
 Running InstaScale locally to an OSD cluster requires extra steps from the above.
-### Set `useMachinePools` to `true`
-- In your OpenShift console go to workloads -> `instascale-config`
-- Alter the YAML so that `useMachinePools: 'true'`
-- Click save
-### Add the `instascale-ocm-secret` 
-- Get your API token from [here](https://console.redhat.com/openshift/token)
-- Navigate to Workloads -> secrets
-- Click Create -> Key/value secret
-- Secret name: `instascale-ocm-secret`
-- Key: `token`
-- Value: `<YOUR_API_TOKEN>`
-- Click Create
+- Set `useMachinePools` to `true`
+    - In your OpenShift console go to workloads -> ConfigMaps -> `instascale-config`
+    - Alter the YAML so that `useMachinePools: 'true'`
+    - Click save
+- Add the `instascale-ocm-secret` 
+    - Get your API token from [here](https://console.redhat.com/openshift/token)
+    - Navigate to Workloads -> secrets
+    - Click Create -> Key/value secret
+    - Secret name: `instascale-ocm-secret`
+    - Key: `token`
+    - Value: `<YOUR_API_TOKEN>`
+    - Click Create
 ## Testing
 
 Run tests with command: 
