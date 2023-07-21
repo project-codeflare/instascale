@@ -45,8 +45,9 @@ import (
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
 	client.Client
-	Scheme           *runtime.Scheme
-	ConfigsNamespace string
+	Scheme             *runtime.Scheme
+	ConfigsNamespace   string
+	OcmSecretNamespace string
 }
 
 var (
@@ -149,34 +150,47 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	instascaleConfigmap, err := kubeClient.CoreV1().ConfigMaps(r.ConfigsNamespace).Get(context.Background(), "instascale-config", metav1.GetOptions{})
 	if err != nil {
 		klog.Infof("Config map named instascale-config is not available in namespace %v", r.ConfigsNamespace)
+		return err
 	}
 
-	if maxScaleNodesAllowed, err = strconv.Atoi(instascaleConfigmap.Data["maxScaleoutAllowed"]); err != nil {
-		klog.Infof("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
+	maxScaleNodesAllowed, err = strconv.Atoi(instascaleConfigmap.Data["maxScaleoutAllowed"])
+	if err != nil {
+		klog.Warningf("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
 		maxScaleNodesAllowed = 3
 	}
-	klog.Infof("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
-
-	useMachineSets = true
-	useMachinePools, err := strconv.ParseBool(instascaleConfigmap.Data["useMachinePools"])
-	if err != nil {
-		klog.Infof("Error converting %v to bool. Defaulting to using Machine Sets", useMachineSets)
-	} else {
-		useMachineSets = !useMachinePools
-		klog.Infof("Setting useMachineSets to %v", useMachineSets)
+	if instascaleConfigmap != nil {
+		klog.Errorf("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
 	}
 
-	if !useMachineSets {
-		instascaleOCMSecret, err := kubeClient.CoreV1().Secrets(r.ConfigsNamespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
-		if err != nil {
-			klog.Errorf("Error getting instascale-ocm-secret from namespace %v - Error :  %v", r.ConfigsNamespace, err)
+	useMachineSets = true
+	ocmSecretExists := ocmSecretExists(r.OcmSecretNamespace)
+	if ocmSecretExists {
+		machinePoolsExists := machinePoolExists()
+
+		if machinePoolsExists {
+			useMachineSets = false
+			klog.Infof("Using machine pools %v", machinePoolsExists)
+		} else {
+			klog.Infof("Setting useMachineSets to %v", useMachineSets)
 		}
-		ocmToken = string(instascaleOCMSecret.Data["token"])
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&arbv1.AppWrapper{}).
 		Complete(r)
+}
+
+func ocmSecretExists(namespace string) bool {
+	instascaleOCMSecret, err := kubeClient.CoreV1().Secrets(namespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
+	if err != nil {
+		klog.Errorf("Error getting instascale-ocm-secret from namespace %v: %v", namespace, err)
+		klog.Infof("If you are looking to use OCM, ensure that the 'instascale-ocm-secret' secret is available on the cluster within namespace %v", namespace)
+		klog.Infof("Setting useMachineSets to %v.", useMachineSets)
+		return false
+	}
+
+	ocmToken = string(instascaleOCMSecret.Data["token"])
+	return true
 }
 
 func addAppwrappersThatNeedScaling() {
@@ -223,28 +237,27 @@ func onAdd(obj interface{}) {
 	aw, ok := obj.(*arbv1.AppWrapper)
 	if ok {
 		klog.Infof("Found Appwrapper named %s that has status %v", aw.Name, aw.Status.State)
-		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" {
+		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" && aw.Labels["orderedinstance"] != "" {
 			//scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 			demandPerInstanceType := discoverInstanceTypes(aw)
 			//TODO: simplify the looping
-			if useMachineSets {
-				if canScaleMachineset(demandPerInstanceType) {
-					scaleUp(aw, demandPerInstanceType)
+			if demandPerInstanceType != nil {
+				if useMachineSets {
+					if canScaleMachineset(demandPerInstanceType) {
+						scaleUp(aw, demandPerInstanceType)
+					} else {
+						klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
+					}
 				} else {
-					klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
-				}
-			} else {
-				if canScaleMachinepool(demandPerInstanceType) {
-					scaleUp(aw, demandPerInstanceType)
-				} else {
-					klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
+					if canScaleMachinepool(demandPerInstanceType) {
+						scaleUp(aw, demandPerInstanceType)
+					} else {
+						klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
+					}
 				}
 			}
-
 		}
-
 	}
-
 }
 
 func onUpdate(old, new interface{}) {

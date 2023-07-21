@@ -55,9 +55,11 @@ func main() {
 	var enableLeaderElection bool
 	var probeAddr string
 	var configsNamespace string
+	var ocmSecretNamespace string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.StringVar(&configsNamespace, "configs-namespace", "kube-system", "The namespace containing the InstaScale configmap and OCM secret")
+	flag.StringVar(&configsNamespace, "configs-namespace", "kube-system", "The namespace containing the Instacale configmap")
+	flag.StringVar(&ocmSecretNamespace, "ocm-secret-namespace", "default", "The namespace containing the OCM secret")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
@@ -83,9 +85,10 @@ func main() {
 	}
 
 	if err = (&controllers.AppWrapperReconciler{
-		Client:           mgr.GetClient(),
-		Scheme:           mgr.GetScheme(),
-		ConfigsNamespace: configsNamespace,
+		Client:             mgr.GetClient(),
+		Scheme:             mgr.GetScheme(),
+		ConfigsNamespace:   configsNamespace,
+		OcmSecretNamespace: ocmSecretNamespace,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AppWrapper")
 		os.Exit(1)
