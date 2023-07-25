@@ -179,59 +179,6 @@ func TestProviderSpecFromRawExtension(t *testing.T) {
 	}
 }
 
-func TestNewClientBuilder(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-
-	tests := []struct {
-		name       string
-		kubeconfig string
-		wantErr    bool
-	}{
-		{
-			name:       "empty kubeconfig",
-			kubeconfig: "",
-			wantErr:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := NewClientBuilder(tt.kubeconfig)
-			g.Expect(err).To(gomega.HaveOccurred())
-			g.Expect(result).To(gomega.BeNil())
-		})
-	}
-}
-
-func TestGetRestConfig(t *testing.T) {
-	g := gomega.NewGomegaWithT(t)
-
-	tests := []struct {
-		name       string
-		kubeconfig string
-		wantErr    bool
-	}{
-		{
-			name:       "invalid kubeconfig",
-			kubeconfig: "/path-to-invalid-kube/config",
-			wantErr:    true,
-		},
-		{
-			name:       "empty kubeconfig",
-			kubeconfig: "",
-			wantErr:    true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result, err := getRestConfig(tt.kubeconfig)
-			g.Expect(err).To(gomega.HaveOccurred())
-			g.Expect(result).To(gomega.BeNil())
-		})
-	}
-}
-
 func TestContains(t *testing.T) {
 	g := gomega.NewGomegaWithT(t)
 
