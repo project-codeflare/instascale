@@ -243,20 +243,12 @@ func onAdd(obj interface{}) {
 		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" && aw.Labels["orderedinstance"] != "" {
 			//scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 			demandPerInstanceType := discoverInstanceTypes(aw)
-			//TODO: simplify the looping
+
 			if demandPerInstanceType != nil {
-				if useMachineSets {
-					if canScaleMachineset(demandPerInstanceType) {
-						scaleUp(aw, demandPerInstanceType)
-					} else {
-						klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
-					}
+				if (useMachineSets && canScaleMachineset(demandPerInstanceType)) || (!useMachineSets && canScaleMachinepool(demandPerInstanceType)) {
+					scaleUp(aw, demandPerInstanceType)
 				} else {
-					if canScaleMachinepool(demandPerInstanceType) {
-						scaleUp(aw, demandPerInstanceType)
-					} else {
-						klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
-					}
+					klog.Infof("Cannot scale up replicas. The maximum allowed replicas is %v", maxScaleNodesAllowed)
 				}
 			}
 		}
@@ -271,9 +263,11 @@ func onUpdate(old, new interface{}) {
 			klog.Info("Job completed, deleting resources owned")
 			deleteMachineSet(aw)
 		}
+
 		if contains(scaledAppwrapper, aw.Name) {
 			return
 		}
+
 		pending, aw := IsAwPending()
 		if pending {
 			demandPerInstanceType := discoverInstanceTypes(aw)
@@ -283,9 +277,7 @@ func onUpdate(old, new interface{}) {
 				klog.Infof("Cannot scale up replicas max replicas allowed is %v", maxScaleNodesAllowed)
 			}
 		}
-
 	}
-
 }
 
 func discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
@@ -344,11 +336,13 @@ func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
 	if err != nil {
 		klog.Fatalf("Error listing: %v", err)
 	}
+
 	for _, aw := range queuedJobs {
 		//skip
 		if contains(scaledAppwrapper, aw.Name) {
 			continue
 		}
+
 		status := aw.Status.State
 		allconditions := aw.Status.Conditions
 		for _, condition := range allconditions {
@@ -381,13 +375,9 @@ func findExactMatch(aw *arbv1.AppWrapper) *arbv1.AppWrapper {
 		if eachAw.Status.State != "Pending" {
 			continue
 		}
-		for k, v := range eachAw.Labels {
-			if k == "orderedinstance" {
-				if v == existingAcquiredMachineTypes {
-					match = eachAw
-					klog.Infof("Found exact match, %v appwrapper has acquire machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
-				}
-			}
+		if eachAw.Labels["orderedinstance"] == existingAcquiredMachineTypes {
+			match = eachAw
+			klog.Infof("Found exact match, %v appwrapper has acquired machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
 		}
 	}
 	return match
@@ -405,7 +395,6 @@ func onDelete(obj interface{}) {
 					swapNodeLabels(aw, matchedAw)
 				} else {
 					klog.Infof("Appwrapper %s deleted, scaling down machines", aw.Name)
-
 					scaleDown(aw)
 				}
 			} else {
