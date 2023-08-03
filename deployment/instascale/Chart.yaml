@@ -1,0 +1,4 @@
+apiVersion: v1
+description: On-demand resource scaling for OpenShift clusters
+name: instascale
+version: 0.1.0

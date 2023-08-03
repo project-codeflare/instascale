@@ -1,0 +1,32 @@
+deploymentName: instascale
+namespace: kube-system
+replicaCount: 1
+loglevel: 3
+
+image:
+  repository: instascale
+  tag: latest
+  pullPolicy: Always
+
+resources:
+  limits:
+    cpu: "2"
+    memory: "2G"
+  requests:
+    cpu: "2"
+    memory: "2G"
+
+serviceAccount:
+  name: instascale-sa
+
+configMap:
+  name: instascale-config
+  maxScaleoutAllowed: 15
+
+clusterRole:
+  name: instascale-cr
+
+clusterRoleBinding:
+  name: instascale-crb
+  serviceAccountName: instascale-sa
+

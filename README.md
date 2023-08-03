@@ -23,6 +23,7 @@ Key features:
 
 ## Pre-requisites
 -  Installed go version 1.18
+-  Install the Helm Client on your local machine [here](https://docs.helm.sh/using_helm/#installing-helm). 
 -  Running OpenShift cluster
 
 ## Building
@@ -37,11 +38,7 @@ Key features:
 ```
 git clone https://github.com/project-codeflare/instascale.git
 cd deployment/
-oc apply -f instascale-configmap.yaml
-oc apply -f instascale-sa.yaml
-oc apply -f instascale-clusterrole.yaml
-oc apply -f instascale-clusterrolebinding.yaml
-oc apply -f deployment.yaml
+helm install instascale instascale
 ```
 ## Running an InstaScale deployment locally with Visual Studio Code
 - Deploy MCAD using steps [here](https://github.com/project-codeflare/multi-cluster-app-dispatcher/blob/main/doc/deploy/deployment.md).
@@ -49,10 +46,7 @@ oc apply -f deployment.yaml
 ```
 git clone https://github.com/project-codeflare/instascale.git
 cd deployment/
-oc apply -f instascale-configmap.yaml
-oc apply -f instascale-sa.yaml
-oc apply -f instascale-clusterrole.yaml
-oc apply -f instascale-clusterrolebinding.yaml
+helm install <release-name> instascale
 ```
 - In Visual Studio Code update `.vscode/launch.json` so that `"KUBECONFIG"` points to your Kubernetes config file.<br>
 - If you changed the namespace in `instascale-configmap.yaml` update the `args[]` in `launch.json` to include `--configs-namespace="<YOUR_NAMESPACE>"`.<br>
