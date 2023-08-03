@@ -5,7 +5,6 @@ import (
 	"fmt"
 	ocmsdk "github.com/openshift-online/ocm-sdk-go"
 	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
-	"github.com/openshift-online/ocm-sdk-go/logging"
 	configv1 "github.com/openshift/api/config/v1"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 	"k8s.io/apimachinery/pkg/types"
@@ -14,23 +13,30 @@ import (
 	"strings"
 )
 
-func scaleMachinePool(aw *arbv1.AppWrapper, userRequestedInstanceType string, replicas int) {
+func createOCMConnection() (*ocmsdk.Connection, error) {
 	logger, err := ocmsdk.NewGoLoggerBuilder().
 		Debug(false).
 		Build()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build logger: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("can't build logger: %v", err)
 	}
 
-	// Create the connection, and remember to close it:
 	connection, err := ocmsdk.NewConnectionBuilder().
 		Logger(logger).
 		Tokens(ocmToken).
 		Build()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build connection: %v\n", err)
-		os.Exit(1)
+		return nil, fmt.Errorf("can't build connection: %v", err)
+	}
+
+	return connection, nil
+}
+
+func scaleMachinePool(aw *arbv1.AppWrapper, userRequestedInstanceType string, replicas int) {
+	connection, err := createOCMConnection()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
+		return
 	}
 	defer connection.Close()
 
@@ -53,23 +59,13 @@ func scaleMachinePool(aw *arbv1.AppWrapper, userRequestedInstanceType string, re
 }
 
 func deleteMachinePool(aw *arbv1.AppWrapper) {
-
-	logger, err := ocmsdk.NewGoLoggerBuilder().
-		Debug(false).
-		Build()
+	connection, err := createOCMConnection()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build logger: %v\n", err)
-		os.Exit(1)
-	}
-	connection, err := ocmsdk.NewConnectionBuilder().
-		Logger(logger).
-		Tokens(ocmToken).
-		Build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build connection: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
+		return
 	}
 	defer connection.Close()
+
 	machinePoolsConnection := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools().List()
 
 	machinePoolsListResponse, _ := machinePoolsConnection.Send()
@@ -88,20 +84,9 @@ func deleteMachinePool(aw *arbv1.AppWrapper) {
 
 // Check if machine pools exist
 func machinePoolExists() bool {
-	logger, err := ocmsdk.NewGoLoggerBuilder().
-		Debug(false).
-		Build()
+	connection, err := createOCMConnection()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build logger: %v\n", err)
-		os.Exit(1)
-	}
-	connection, err := ocmsdk.NewConnectionBuilder().
-		Logger(logger).
-		Tokens(ocmToken).
-		Build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build connection: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
 	}
 	defer connection.Close()
 
@@ -112,7 +97,6 @@ func machinePoolExists() bool {
 
 // getOCMClusterID determines the internal clusterID to be used for OCM API calls
 func getOCMClusterID(r *AppWrapperReconciler) error {
-
 	cv := &configv1.ClusterVersion{}
 	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, cv)
 	if err != nil {
@@ -123,22 +107,9 @@ func getOCMClusterID(r *AppWrapperReconciler) error {
 
 	ctx := context.Background()
 
-	// Create a logger that has the debug level enabled:
-	logger, err := logging.NewGoLoggerBuilder().
-		Debug(false).
-		Build()
+	connection, err := createOCMConnection()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build logger: %v\n", err)
-		os.Exit(1)
-	}
-
-	connection, err := ocmsdk.NewConnectionBuilder().
-		Logger(logger).
-		Tokens(ocmToken).
-		Build()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Can't build connection: %v\n", err)
-		os.Exit(1)
+		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
 	}
 	defer connection.Close()
 
