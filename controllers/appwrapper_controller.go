@@ -26,10 +26,13 @@ import (
 	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
 	"github.com/openshift/client-go/machine/listers/machine/v1beta1"
+
+	appwrapperClientSet "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/clientset/versioned"
+
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
-	"github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/clientset/controller-versioned/clients"
-	arbinformers "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/informers/controller-externalversion"
-	v1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/listers/controller/v1"
+	appwrapperlisters "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/listers/controller/v1beta1"
+
+	arbinformersFactory "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/informers/externalversions"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -62,7 +65,7 @@ var (
 	machineLister        v1beta1.MachineLister
 	msInformerHasSynced  bool
 	machineClient        mapiclientset.Interface
-	queueJobLister       v1.AppWrapperLister
+	queueJobLister       appwrapperlisters.AppWrapperLister
 	kubeClient           *kubernetes.Clientset
 )
 
@@ -199,11 +202,11 @@ func addAppwrappersThatNeedScaling() {
 	if err != nil {
 		klog.Fatalf("Error getting config: %v", err)
 	}
-	awJobClient, _, err := clients.NewClient(restConfig)
+	awJobClient, err := appwrapperClientSet.NewForConfig(restConfig)
 	if err != nil {
 		klog.Fatalf("Error creating client: %v", err)
 	}
-	queueJobInformer := arbinformers.NewSharedInformerFactory(awJobClient, 0).AppWrapper().AppWrappers()
+	queueJobInformer := arbinformersFactory.NewSharedInformerFactory(awJobClient, 0).Mcad().V1beta1().AppWrappers()
 	queueJobInformer.Informer().AddEventHandler(
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
