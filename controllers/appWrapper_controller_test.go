@@ -1,10 +1,11 @@
 package controllers
 
 import (
+	"testing"
+
 	"github.com/onsi/gomega"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"testing"
 )
 
 func TestDiscoverInstanceTypes(t *testing.T) {
@@ -36,7 +37,6 @@ func TestDiscoverInstanceTypes(t *testing.T) {
 										Replicas: 2,
 									},
 								},
-								TypeMeta: metav1.TypeMeta{},
 							},
 						},
 					},
@@ -64,7 +64,6 @@ func TestDiscoverInstanceTypes(t *testing.T) {
 										Replicas: 1,
 									},
 								},
-								TypeMeta: metav1.TypeMeta{},
 							},
 						},
 					},
