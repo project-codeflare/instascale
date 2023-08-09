@@ -1,6 +1,6 @@
 module github.com/project-codeflare/instascale
 
-go 1.18
+go 1.19
 
 require (
 	github.com/onsi/gomega v1.27.4
