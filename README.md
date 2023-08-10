@@ -22,7 +22,7 @@ Key features:
 # Development
 
 ## Pre-requisites
--  Installed go version 1.18
+-  Installed Go version 1.19
 -  Running OpenShift cluster
 
 ## Building
