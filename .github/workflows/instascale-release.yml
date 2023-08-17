@@ -28,6 +28,9 @@ jobs:
     permissions:
       contents: write
 
+    env:
+      PR_BRANCH: update-release-${{ github.event.inputs.tag }}
+
     steps:
     - uses: actions/checkout@v3
 
@@ -76,11 +79,38 @@ jobs:
         make image-push -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:stable
 
     # Update dependencies
-    - name: Commit go.mod and go.sum changes back to repository
+    - name: Commit go.mod and go.sum changes to the branch
       uses: stefanzweifel/git-auto-commit-action@v4
       with:
         commit_message: Update go.mod and go.sum to MCAD ${{ github.event.inputs.mcad-version }}
         file_pattern: 'go.mod go.sum'
+        create_branch: true
+        branch: ${{ env.PR_BRANCH }}
+
+    - name: Create a Pull request with code changes
+      run: |
+        if git branch -a | grep "${{ env.PR_BRANCH }}"; then
+          GIT_BRANCH=${GITHUB_REF#refs/heads/}
+          gh pr create --base "$GIT_BRANCH" --fill --head "${{ env.PR_BRANCH }}" --label "lgtm" --label "approved"
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.CODEFLARE_MACHINE_ACCOUNT_TOKEN }}
+
+    - name: Wait for PR to merge
+      run: |
+        if git branch -a | grep "${{ env.PR_BRANCH }}"; then
+          timeout 3600 bash -c 'until [[ $(gh pr view '${{ env.PR_BRANCH }}' --json state --jq .state) == "MERGED" ]]; do sleep 5 && echo "$(gh pr view '${{ env.PR_BRANCH }}' --json state --jq .state)"; done'
+        fi
+      env:
+        GITHUB_TOKEN: ${{ github.TOKEN }}
+
+    - name: Delete the PR branch
+      run: |
+        if git branch -a | grep "${{ env.PR_BRANCH }}"; then
+          git push origin --delete "${{ env.PR_BRANCH }}"
+        fi
+      env:
+        GITHUB_TOKEN: ${{ secrets.CODEFLARE_MACHINE_ACCOUNT_TOKEN }}
 
     # Create a release in InstaScale
     - name: Creates a release in GitHub
@@ -89,4 +119,3 @@ jobs:
       env:
         GITHUB_TOKEN: ${{ github.TOKEN }}
       shell: bash
-
