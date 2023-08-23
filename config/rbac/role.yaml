@@ -24,7 +24,7 @@ rules:
   verbs:
   - get
 - apiGroups:
-  - instascale.ibm.com.instascale.ibm.com
+  - workload.codeflare.dev
   resources:
   - appwrappers
   verbs:
@@ -36,13 +36,13 @@ rules:
   - update
   - watch
 - apiGroups:
-  - instascale.ibm.com.instascale.ibm.com
+  - workload.codeflare.dev
   resources:
   - appwrappers/finalizers
   verbs:
   - update
 - apiGroups:
-  - instascale.ibm.com.instascale.ibm.com
+  - workload.codeflare.dev
   resources:
   - appwrappers/status
   verbs:

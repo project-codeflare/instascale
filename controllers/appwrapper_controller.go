@@ -76,12 +76,12 @@ const (
 	pullSecretAuthKey = "cloud.openshift.com"
 )
 
-//+kubebuilder:rbac:groups=instascale.ibm.com.instascale.ibm.com,resources=appwrappers,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=instascale.ibm.com.instascale.ibm.com,resources=appwrappers/status,verbs=get;update;patch
-//+kubebuilder:rbac:groups=instascale.ibm.com.instascale.ibm.com,resources=appwrappers/finalizers,verbs=update
+// +kubebuilder:rbac:groups=workload.codeflare.dev,resources=appwrappers,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=workload.codeflare.dev,resources=appwrappers/status,verbs=get;update;patch
+// +kubebuilder:rbac:groups=workload.codeflare.dev,resources=appwrappers/finalizers,verbs=update
 
-//+kubebuilder:rbac:groups=apps,resources=machineset,verbs=get;list;watch;create;update;patch;delete
-//+kubebuilder:rbac:groups=apps,resources=machineset/status,verbs=get
+// +kubebuilder:rbac:groups=apps,resources=machineset,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=apps,resources=machineset/status,verbs=get
 
 // Reconcile is part of the main kubernetes reconciliation loop which aims to
 // move the current state of the cluster closer to the desired state.
@@ -99,7 +99,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	var appwrapper arbv1.AppWrapper
 	if err := r.Get(ctx, req.NamespacedName, &appwrapper); err != nil {
 		if apierrors.IsNotFound(err) {
-			//ignore not-found errors, since we can get them on delete requests.
+			// ignore not-found errors, since we can get them on delete requests.
 			return ctrl.Result{}, nil
 		}
 		klog.Error(err, "unable to fetch appwrapper")
@@ -128,7 +128,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if !cache.WaitForCacheSync(stopper, informer.HasSynced) {
 		klog.Info("Wait for cache to sync")
 	}
-	//TODO: do we need dual sync??
+	// TODO: do we need dual sync??
 	msInformerHasSynced = informer.HasSynced()
 	addAppwrappersThatNeedScaling()
 	<-stopper
@@ -206,7 +206,7 @@ func addAppwrappersThatNeedScaling() {
 	if err != nil {
 		klog.Fatalf("Error creating client: %v", err)
 	}
-	queueJobInformer := arbinformersFactory.NewSharedInformerFactory(awJobClient, 0).Mcad().V1beta1().AppWrappers()
+	queueJobInformer := arbinformersFactory.NewSharedInformerFactory(awJobClient, 0).Workload().V1beta1().AppWrappers()
 	queueJobInformer.Informer().AddEventHandler(
 		cache.FilteringResourceEventHandler{
 			FilterFunc: func(obj interface{}) bool {
@@ -241,7 +241,7 @@ func onAdd(obj interface{}) {
 	if ok {
 		klog.Infof("Found Appwrapper named %s that has status %v", aw.Name, aw.Status.State)
 		if aw.Status.State == arbv1.AppWrapperStateEnqueued || aw.Status.State == "" && aw.Labels["orderedinstance"] != "" {
-			//scaledAppwrapper = append(scaledAppwrapper, aw.Name)
+			// scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 			demandPerInstanceType := discoverInstanceTypes(aw)
 
 			if demandPerInstanceType != nil {
@@ -314,9 +314,9 @@ func canScaleMachinepool(demandPerInstanceType map[string]int) bool {
 
 func scaleUp(aw *arbv1.AppWrapper, demandMapPerInstanceType map[string]int) {
 	if msInformerHasSynced {
-		//Assumption is made that the cluster has machineset configure that AW needs
+		// Assumption is made that the cluster has machineset configure that AW needs
 		for userRequestedInstanceType := range demandMapPerInstanceType {
-			//TODO: get unique machineset
+			// TODO: get unique machineset
 			replicas := demandMapPerInstanceType[userRequestedInstanceType]
 
 			if useMachineSets {
@@ -328,7 +328,6 @@ func scaleUp(aw *arbv1.AppWrapper, demandMapPerInstanceType map[string]int) {
 		klog.Infof("Completed Scaling for %v", aw.Name)
 		scaledAppwrapper = append(scaledAppwrapper, aw.Name)
 	}
-
 }
 
 func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
@@ -338,7 +337,7 @@ func IsAwPending() (false bool, aw *arbv1.AppWrapper) {
 	}
 
 	for _, aw := range queuedJobs {
-		//skip
+		// skip
 		if contains(scaledAppwrapper, aw.Name) {
 			continue
 		}
@@ -414,7 +413,7 @@ func scaleDown(aw *arbv1.AppWrapper) {
 		deleteMachineSet(aw)
 	}
 
-	//make a separate slice
+	// make a separate slice
 	for idx := range scaledAppwrapper {
 		if scaledAppwrapper[idx] == aw.Name {
 			scaledAppwrapper[idx] = ""

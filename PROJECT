@@ -5,11 +5,11 @@ plugins:
   manifests.sdk.operatorframework.io/v2: {}
   scorecard.sdk.operatorframework.io/v2: {}
 projectName: instascale
-repo: github.ibm.com/project-codeflare/instascale
+repo: github.com/project-codeflare/instascale
 resources:
 - controller: true
-  domain: my.domain
-  group: mcad.ibm.com
+  domain: codeflare.dev
+  group: workload.codeflare.dev
   kind: AppWrapper
   version: v1beta1
 version: "0.0.1"
