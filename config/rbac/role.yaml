@@ -49,3 +49,18 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+    - ""
+  resourceNames:
+    - instascale-ocm-secret
+  resources:
+    - secrets
+  verbs:
+    - get
+- apiGroups:
+  - config.openshift.io 
+  resources:
+  - clusterversions
+  verbs:
+  - get
+  - update
