@@ -29,7 +29,7 @@ Key features:
 - To build locally : `make build`
 - To run locally : `make run`
 ## Image creation
-- To build and release a docker image for controller : `make IMG=quay.io/project-codeflare/instascale:<TAG> docker-build docker-push`
+- To build and release a docker image for controller : `make IMG=quay.io/project-codeflare/instascale:<TAG> image-build image-push`
 - Note that the other contents of the Makefile (as well as the `config` and `bin` dirs) exist for future operator development, and are not currently utilized
 ## Deployment
 - Deploy InstaScale using: `make deploy`
