@@ -19,21 +19,28 @@ package main
 import (
 	"flag"
 	"os"
+	"strconv"
 
+	configv1 "github.com/openshift/api/config/v1"
+
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
+	"k8s.io/client-go/kubernetes"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	// Import all Kubernetes client auth plugins (e.g. Azure, GCP, OIDC, etc.)
 	// to ensure that exec-entrypoint and run can make use of them.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
 
-	configv1 "github.com/openshift/api/config/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
-	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/healthz"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/project-codeflare/instascale/controllers"
-	//+kubebuilder:scaffold:imports
+	"github.com/project-codeflare/instascale/pkg/config"
+	// +kubebuilder:scaffold:imports
 	mcadv1beta1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 )
 
@@ -46,7 +53,7 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(configv1.Install(scheme))
 
-	//+kubebuilder:scaffold:scheme
+	// +kubebuilder:scaffold:scheme
 	_ = mcadv1beta1.AddToScheme(scheme)
 }
 
@@ -71,7 +78,47 @@ func main() {
 
 	ctrl.SetLogger(zap.New(zap.UseFlagOptions(&opts)))
 
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	ctx := ctrl.SetupSignalHandler()
+
+	restConfig := ctrl.GetConfigOrDie()
+	kubeClient, err := kubernetes.NewForConfig(restConfig)
+	if err != nil {
+		setupLog.Error(err, "Error creating Kubernetes client")
+		os.Exit(1)
+	}
+
+	// InstaScale configuration
+	cfg := config.InstaScaleConfiguration{
+		MaxScaleoutAllowed: 3,
+	}
+
+	// Source InstaScale ConfigMap
+	if InstaScaleConfigMap, err := kubeClient.CoreV1().ConfigMaps(configsNamespace).Get(ctx, "instascale-config", metav1.GetOptions{}); err != nil {
+		setupLog.Error(err, "Error reading 'instascale-config' ConfigMap")
+		os.Exit(1)
+	} else if maxScaleoutAllowed := InstaScaleConfigMap.Data["maxScaleoutAllowed"]; maxScaleoutAllowed != "" {
+		if max, err := strconv.Atoi(maxScaleoutAllowed); err != nil {
+			setupLog.Error(err, "Error converting 'maxScaleoutAllowed' to integer")
+			os.Exit(1)
+		} else {
+			cfg.MaxScaleoutAllowed = int32(max)
+		}
+	}
+
+	// Source OCM Secret optionally
+	if OCMSecret, err := kubeClient.CoreV1().Secrets(ocmSecretNamespace).Get(ctx, "instascale-ocm-secret", metav1.GetOptions{}); apierrors.IsNotFound(err) {
+		setupLog.Info("If you are looking to use OCM, ensure the 'instascale-ocm-secret' Secret has been created")
+	} else if err != nil {
+		setupLog.Error(err, "Error checking if OCM Secret exists")
+		os.Exit(1)
+	} else {
+		cfg.OCMSecretRef = &corev1.SecretReference{
+			Namespace: OCMSecret.Namespace,
+			Name:      OCMSecret.Name,
+		}
+	}
+
+	mgr, err := ctrl.NewManager(restConfig, ctrl.Options{
 		Scheme:                 scheme,
 		MetricsBindAddress:     metricsAddr,
 		Port:                   9443,
@@ -85,15 +132,14 @@ func main() {
 	}
 
 	if err = (&controllers.AppWrapperReconciler{
-		Client:             mgr.GetClient(),
-		Scheme:             mgr.GetScheme(),
-		ConfigsNamespace:   configsNamespace,
-		OcmSecretNamespace: ocmSecretNamespace,
+		Client: mgr.GetClient(),
+		Scheme: mgr.GetScheme(),
+		Config: cfg,
 	}).SetupWithManager(mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AppWrapper")
 		os.Exit(1)
 	}
-	//+kubebuilder:scaffold:builder
+	// +kubebuilder:scaffold:builder
 
 	if err := mgr.AddHealthzCheck("healthz", healthz.Ping); err != nil {
 		setupLog.Error(err, "unable to set up health check")
@@ -105,7 +151,7 @@ func main() {
 	}
 
 	setupLog.Info("starting manager")
-	if err := mgr.Start(ctrl.SetupSignalHandler()); err != nil {
+	if err := mgr.Start(ctx); err != nil {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}

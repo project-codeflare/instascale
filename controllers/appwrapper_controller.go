@@ -18,21 +18,22 @@ package controllers
 
 import (
 	"context"
+	"fmt"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
 	mapiclientset "github.com/openshift/client-go/machine/clientset/versioned"
 	machineinformersv1beta1 "github.com/openshift/client-go/machine/informers/externalversions"
 	"github.com/openshift/client-go/machine/listers/machine/v1beta1"
-
-	appwrapperClientSet "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/clientset/versioned"
+	"github.com/project-codeflare/instascale/pkg/config"
 
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
+	appwrapperClientSet "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/clientset/versioned"
+	arbinformersFactory "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/informers/externalversions"
 	appwrapperlisters "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/listers/controller/v1beta1"
 
-	arbinformersFactory "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/client/informers/externalversions"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -40,6 +41,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/klog"
+
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log"
@@ -48,9 +50,8 @@ import (
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
 	client.Client
-	Scheme             *runtime.Scheme
-	ConfigsNamespace   string
-	OcmSecretNamespace string
+	Scheme *runtime.Scheme
+	Config config.InstaScaleConfiguration
 }
 
 var (
@@ -137,7 +138,6 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 // SetupWithManager sets up the controller with the Manager.
 func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
-
 	kubeconfig := os.Getenv("KUBECONFIG")
 	cb, err := NewClientBuilder(kubeconfig)
 	if err != nil {
@@ -150,31 +150,23 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	machineClient = cb.MachineClientOrDie("machine-shared-informer")
 	kubeClient, _ = kubernetes.NewForConfig(restConfig)
-	instascaleConfigmap, err := kubeClient.CoreV1().ConfigMaps(r.ConfigsNamespace).Get(context.Background(), "instascale-config", metav1.GetOptions{})
-	if err != nil {
-		klog.Infof("Config map named instascale-config is not available in namespace %v", r.ConfigsNamespace)
-		return err
-	}
 
-	maxScaleNodesAllowed, err = strconv.Atoi(instascaleConfigmap.Data["maxScaleoutAllowed"])
-	if err != nil {
-		klog.Warningf("Error converting %v to int. Setting maxScaleNodesAllowed to 3", maxScaleNodesAllowed)
-		maxScaleNodesAllowed = 3
-	}
-	if instascaleConfigmap != nil {
-		klog.Errorf("Got config map named %v from namespace %v that configures max nodes in cluster to value %v", instascaleConfigmap.Name, instascaleConfigmap.Namespace, maxScaleNodesAllowed)
-	}
+	maxScaleNodesAllowed = int(r.Config.MaxScaleoutAllowed)
 
 	useMachineSets = true
-	ocmSecretExists := ocmSecretExists(r.OcmSecretNamespace)
-	if ocmSecretExists {
-		machinePoolsExists := machinePoolExists()
-
-		if machinePoolsExists {
-			useMachineSets = false
-			klog.Infof("Using machine pools %v", machinePoolsExists)
+	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
+		if ocmSecret, err := getOCMSecret(ocmSecretRef); err != nil {
+			return fmt.Errorf("error reading OCM Secret from ref %q: %w", ocmSecretRef, err)
+		} else if token := ocmSecret.Data["token"]; len(token) > 0 {
+			ocmToken = string(token)
 		} else {
-			klog.Infof("Setting useMachineSets to %v", useMachineSets)
+			return fmt.Errorf("token is missing from OCM Secret %q", ocmSecretRef)
+		}
+		if ok, err := machinePoolExists(); err != nil {
+			return err
+		} else if ok {
+			useMachineSets = false
+			klog.Info("Using machine pools for cluster auto-scaling")
 		}
 	}
 
@@ -183,17 +175,8 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func ocmSecretExists(namespace string) bool {
-	instascaleOCMSecret, err := kubeClient.CoreV1().Secrets(namespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
-	if err != nil {
-		klog.Errorf("Error getting instascale-ocm-secret from namespace %v: %v", namespace, err)
-		klog.Infof("If you are looking to use OCM, ensure that the 'instascale-ocm-secret' secret is available on the cluster within namespace %v", namespace)
-		klog.Infof("Setting useMachineSets to %v.", useMachineSets)
-		return false
-	}
-
-	ocmToken = string(instascaleOCMSecret.Data["token"])
-	return true
+func getOCMSecret(secretRef *corev1.SecretReference) (*corev1.Secret, error) {
+	return kubeClient.CoreV1().Secrets(secretRef.Namespace).Get(context.Background(), secretRef.Name, metav1.GetOptions{})
 }
 
 func addAppwrappersThatNeedScaling() {
