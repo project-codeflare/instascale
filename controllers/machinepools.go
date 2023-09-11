@@ -3,14 +3,16 @@ package controllers
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
+
 	ocmsdk "github.com/openshift-online/ocm-sdk-go"
 	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
 	configv1 "github.com/openshift/api/config/v1"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
+
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/klog"
-	"os"
-	"strings"
 )
 
 func createOCMConnection() (*ocmsdk.Connection, error) {
@@ -82,17 +84,15 @@ func deleteMachinePool(aw *arbv1.AppWrapper) {
 	})
 }
 
-// Check if machine pools exist
-func machinePoolExists() bool {
+func machinePoolExists() (bool, error) {
 	connection, err := createOCMConnection()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
+		return false, fmt.Errorf("error creating OCM connection: %w", err)
 	}
 	defer connection.Close()
 
 	machinePools := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools()
-	klog.Infof("Machine pools: %v", machinePools)
-	return machinePools != nil
+	return machinePools != nil, nil
 }
 
 // getOCMClusterID determines the internal clusterID to be used for OCM API calls
