@@ -49,6 +49,9 @@ var (
 	setupLog = ctrl.Log.WithName("setup")
 )
 
+// +kubebuilder:rbac:groups="",resources=secrets,resourceNames=instascale-ocm-secret,verbs=get
+// +kubebuilder:rbac:groups="",resources=nodes;configmaps,resourceNames=instascale-config,verbs=list;watch;get;create;update;delete;patch
+
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(configv1.Install(scheme))
