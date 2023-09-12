@@ -2,16 +2,17 @@
 FROM registry.access.redhat.com/ubi8/go-toolset:1.19.10-10 as builder
 
 WORKDIR /workspace
-# Copy the Go Modules manifests
+# Copy the Go modules manifests
 COPY go.mod go.mod
 COPY go.sum go.sum
 # cache deps before building and copying source so that we don't need to re-download as much
 # and so that source changes don't invalidate our downloaded layer
 RUN go mod download
 
-# Copy the go source
+# Copy the Go sources
 COPY main.go main.go
 COPY controllers/ controllers/
+COPY pkg/ pkg/
 
 # Build
 USER root
