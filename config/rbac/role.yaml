@@ -6,6 +6,37 @@ metadata:
   name: manager-role
 rules:
 - apiGroups:
+  - ""
+  resourceNames:
+  - instascale-config
+  resources:
+  - configmaps
+  - nodes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - ""
+  resourceNames:
+  - instascale-ocm-secret
+  resources:
+  - secrets
+  verbs:
+  - get
+- apiGroups:
+  - apps
+  resources:
+  - deployments
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
   - apps
   resources:
   - machineset
@@ -23,6 +54,26 @@ rules:
   - machineset/status
   verbs:
   - get
+- apiGroups:
+  - config.openshift.io
+  resources:
+  - clusterversions
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - machine.openshift.io
+  resources:
+  - '*'
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
 - apiGroups:
   - workload.codeflare.dev
   resources:
@@ -48,19 +99,4 @@ rules:
   verbs:
   - get
   - patch
-  - update
-- apiGroups:
-    - ""
-  resourceNames:
-    - instascale-ocm-secret
-  resources:
-    - secrets
-  verbs:
-    - get
-- apiGroups:
-  - config.openshift.io 
-  resources:
-  - clusterversions
-  verbs:
-  - get
   - update
