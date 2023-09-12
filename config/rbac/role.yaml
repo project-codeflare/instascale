@@ -7,19 +7,19 @@ metadata:
 rules:
 - apiGroups:
   - ""
-  resourceNames:
-  - instascale-config
   resources:
   - configmaps
+  verbs:
+  - get
+- apiGroups:
+  - ""
+  resources:
   - nodes
   verbs:
-  - create
-  - delete
   - get
   - list
   - patch
   - update
-  - watch
 - apiGroups:
   - ""
   resourceNames:
