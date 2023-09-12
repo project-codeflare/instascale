@@ -50,7 +50,8 @@ var (
 )
 
 // +kubebuilder:rbac:groups="",resources=secrets,resourceNames=instascale-ocm-secret,verbs=get
-// +kubebuilder:rbac:groups="",resources=nodes;configmaps,resourceNames=instascale-config,verbs=list;watch;get;create;update;delete;patch
+// +kubebuilder:rbac:groups="",resources=configmaps,verbs=get
+// +kubebuilder:rbac:groups="",resources=nodes,verbs=get;list;patch;update
 
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
@@ -68,8 +69,8 @@ func main() {
 	var ocmSecretNamespace string
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
 	flag.StringVar(&probeAddr, "health-probe-bind-address", ":8081", "The address the probe endpoint binds to.")
-	flag.StringVar(&configsNamespace, "configs-namespace", "kube-system", "The namespace containing the Instacale configmap")
-	flag.StringVar(&ocmSecretNamespace, "ocm-secret-namespace", "default", "The namespace containing the OCM secret")
+	flag.StringVar(&configsNamespace, "configs-namespace", "instascale-system", "The namespace containing the Instacale configmap")
+	flag.StringVar(&ocmSecretNamespace, "ocm-secret-namespace", "instascale-system", "The namespace containing the OCM secret")
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
