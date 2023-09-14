@@ -38,13 +38,14 @@ Key features:
 - Deploy MCAD using steps [here](https://github.com/project-codeflare/multi-cluster-app-dispatcher/blob/main/doc/deploy/deployment.md).
 
 - In Visual Studio Code update `.vscode/launch.json` so that `"KUBECONFIG"` points to your Kubernetes config file.<br>
-- If you changed the namespace in `instascale-configmap.yaml` update the `args[]` in `launch.json` to include `--configs-namespace="<YOUR_NAMESPACE>"`.<br>
+- If you changed the namespace in `config/default/kustomization.yaml` update the `args[]` in `launch.json` to include `"--configs-namespace=<YOUR_NAMESPACE>", "--ocm-secret-namespace=<YOUR_NAMESPACE>"`.<br>
 - You can now run the local deployment with the debugger.
 ## Running locally with a OSD cluster
 Running InstaScale locally to an OSD cluster requires extra steps from the above.
 - Add the `instascale-ocm-secret` 
     - Get your API token from [here](https://console.redhat.com/openshift/token)
     - Navigate to Workloads -> secrets
+    - Select your project to `instascale-system`
     - Click Create -> Key/value secret
     - Secret name: `instascale-ocm-secret`
     - Key: `token`
