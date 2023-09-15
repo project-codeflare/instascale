@@ -51,6 +51,15 @@ Running InstaScale locally to an OSD cluster requires extra steps from the above
     - Key: `token`
     - Value: `<YOUR_API_TOKEN>`
     - Click Create
+## Scaling Machines with a Self-Managed OCP Cluster using AWS
+To scale machines of a certain type you need to create a `MachineSet`. You can find a template [here](/template/machineSetTemplate.yaml).
+- Fill out the necessary fields based on your Cluster and AWS configuration.
+- On your Cluster Dashboard go to `Compute` -> `Create MachineSet`.
+- Paste in your new `MachineSet` you created based off of the template and click `Create`.
+- Your `MachineSet` should now appear.
+- Attempt to scale machines of the same machine type as your `MachineSet` template using `InstaScale`.
+- The `MachineSet` replicas should increase by the number of replicas you have specified.
+
 ## Testing
 
 Run tests with command: 
