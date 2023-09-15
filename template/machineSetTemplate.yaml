@@ -1,0 +1,75 @@
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  annotations:
+    machine.openshift.io/GPU: <numberOfGpus>
+    machine.openshift.io/memoryMb: <Memory>
+    machine.openshift.io/vCPU: <CPUS>
+  name: <MachineSetName>
+  namespace: openshift-machine-api
+  labels:
+    machine.openshift.io/cluster-api-cluster: <cluster>
+spec:
+  replicas: <numberOfReplicas>
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: <cluster>
+      machine.openshift.io/cluster-api-machineset: <machineSetName>
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: <cluster>
+        machine.openshift.io/cluster-api-machine-role: <machineRole>
+        machine.openshift.io/cluster-api-machine-type: <machineType>
+        machine.openshift.io/cluster-api-machineset: <machineSetName>
+    spec:
+      lifecycleHooks: {}
+      metadata: {}
+      providerSpec:
+        value:
+          userDataSecret:
+            name: <userDataSecretName>
+          placement:
+            availabilityZone: <availabilityZone>
+            region: <region>
+          credentialsSecret:
+            name: <CredentialSecretName>
+          instanceType: <instanceType>
+          metadata:
+            creationTimestamp: null
+          blockDevices:
+            - ebs:
+                encrypted: true
+                iops: 0
+                kmsKey:
+                  arn: ''
+                volumeSize: 120
+                volumeType: gp3
+          securityGroups:
+            - filters:
+                - name: 'tag:Name'
+                  values:
+                    - <securityGroupName>
+          kind: AWSMachineProviderConfig
+          metadataServiceOptions: {}
+          tags:
+            - name: kubernetes.io/cluster/<cluster>
+              value: owned
+          deviceIndex: 0
+          ami:
+            id: <amiID>
+          subnet:
+            filters:
+              - name: 'tag:Name'
+                values:
+                  - <subnetName>
+          apiVersion: machine.openshift.io/v1beta1
+          iamInstanceProfile:
+            id: <iAmInstanceProfileID>
+status:
+  availableReplicas: 0
+  fullyLabeledReplicas: 0
+  observedGeneration: 0
+  readyReplicas: 0
+  replicas: 0
+
