@@ -31,6 +31,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/klog"
 
+	"k8s.io/apimachinery/pkg/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -88,7 +89,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// Only reason we are calling it here is that the client is not able to make
 	// calls until it is started, so SetupWithManager is not working.
 	if !useMachineSets && ocmClusterID == "" {
-		getOCMClusterID(r)
+		r.getOCMClusterID(ctx)
 	}
 	var appwrapper arbv1.AppWrapper
 
@@ -128,20 +129,20 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			if err != nil {
 				klog.Infof("Error reconciling MachineSet: %s", err)
 			}
-			return res, nil
+			return res, err
 		} else {
 			res, err := r.reconcileCreateMachineSet(ctx, &appwrapper, demandPerInstanceType)
 			if err != nil {
 				klog.Infof("Error reconciling MachineSet: %s", err)
 			}
-			return res, nil
+			return res, err
 		}
 	} else {
 		res, err := r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
 		if err != nil {
 			klog.Infof("Error reconciling MachinePool: %s", err)
 		}
-		return res, nil
+		return res, err
 	}
 }
 
@@ -155,11 +156,11 @@ func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, 
 			} else {
 				klog.Infof("Appwrapper %s deleted, scaling down machines", appwrapper.Name)
 
-				r.scaleDown(ctx, appwrapper)
+				r.annotateToDeleteMachine(ctx, appwrapper)
 			}
 		} else {
 			klog.Infof("Appwrapper deleted scale-down machineset: %s ", appwrapper.Name)
-			r.scaleDown(ctx, appwrapper)
+			r.deleteMachineSet(ctx, appwrapper)
 		}
 	} else {
 		r.deleteMachinePool(ctx, appwrapper)
@@ -249,35 +250,31 @@ func canScaleMachinepool(demandPerInstanceType map[string]int) bool {
 	return true
 }
 
-// add logic to check for matching pending AppWrappers
 func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.AppWrapper) *arbv1.AppWrapper {
 	var match *arbv1.AppWrapper = nil
 	appwrappers := arbv1.AppWrapperList{}
-	err := r.List(ctx, &appwrappers)
+
+	labelSelector := labels.SelectorFromSet(labels.Set(map[string]string{
+		"orderedinstance": "",
+	}))
+
+	listOptions := &client.ListOptions{
+		LabelSelector: labelSelector,
+	}
+
+	err := r.List(ctx, &appwrappers, listOptions)
 	if err != nil {
 		klog.Error("Cannot list queued appwrappers, associated machines will be deleted")
 		return match
 	}
 	var existingAcquiredMachineTypes = ""
 
-	for key, value := range aw.Labels {
-		if key == "orderedinstance" {
-			existingAcquiredMachineTypes = value
-		}
-	}
-
 	for _, eachAw := range appwrappers.Items {
 		if eachAw.Status.State != "Pending" {
 			continue
 		}
-		for k, v := range eachAw.Labels {
-			if k == "orderedinstance" {
-				if v == existingAcquiredMachineTypes {
-					match = &eachAw
-					klog.Infof("Found exact match, %v appwrapper has acquire machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
-				}
-			}
-		}
+		match = &eachAw
+		klog.Infof("Found exact match, %v appwrapper has acquired machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
 	}
 	return match
 

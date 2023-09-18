@@ -156,16 +156,14 @@ func machinePoolExists() (bool, error) {
 }
 
 // getOCMClusterID determines the internal clusterID to be used for OCM API calls
-func getOCMClusterID(r *AppWrapperReconciler) error {
+func (r *AppWrapperReconciler) getOCMClusterID(ctx context.Context) error {
 	cv := &configv1.ClusterVersion{}
-	err := r.Client.Get(context.TODO(), types.NamespacedName{Name: "version"}, cv)
+	err := r.Get(ctx, types.NamespacedName{Name: "version"}, cv)
 	if err != nil {
 		return fmt.Errorf("can't get clusterversion: %v", err)
 	}
 
 	internalClusterID := string(cv.Spec.ClusterID)
-
-	ctx := context.Background()
 
 	connection, err := createOCMConnection()
 	if err != nil {
