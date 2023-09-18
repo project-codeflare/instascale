@@ -46,7 +46,6 @@ type AppWrapperReconciler struct {
 }
 
 var (
-	scaledAppwrapper     []string
 	reuse                = true
 	ocmClusterID         string
 	ocmToken             string
@@ -121,7 +120,6 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	//TODO Investigate isAWPending()
 	demandPerInstanceType := r.discoverInstanceTypes(&appwrapper)
 	//for userRequestedInstanceType := range demandPerInstanceType {
 	if useMachineSets {
@@ -251,30 +249,6 @@ func canScaleMachinepool(demandPerInstanceType map[string]int) bool {
 	return true
 }
 
-func (r *AppWrapperReconciler) IsAwPending(ctx context.Context) (false bool, aw *arbv1.AppWrapper) {
-	queuedJobs := arbv1.AppWrapperList{}
-	err := r.List(ctx, &queuedJobs)
-	if err != nil {
-		klog.Fatalf("Error listing: %v", err)
-	}
-	for _, aw := range queuedJobs.Items {
-		//skip
-		if contains(scaledAppwrapper, aw.Name) {
-			continue
-		}
-
-		status := aw.Status.State
-		allconditions := aw.Status.Conditions
-		for _, condition := range allconditions {
-			if status == "Pending" && strings.Contains(condition.Message, "Insufficient") {
-				klog.Infof("Pending AppWrapper %v needs scaling", aw.Name)
-				return true, &aw
-			}
-		}
-	}
-	return false, nil
-}
-
 // add logic to check for matching pending AppWrappers
 func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.AppWrapper) *arbv1.AppWrapper {
 	var match *arbv1.AppWrapper = nil
@@ -314,18 +288,5 @@ func (r *AppWrapperReconciler) scaleDown(ctx context.Context, aw *arbv1.AppWrapp
 		r.annotateToDeleteMachine(ctx, aw)
 	} else {
 		r.deleteMachineSet(ctx, aw)
-	}
-
-	// make a separate slice
-	for idx := range scaledAppwrapper {
-		if scaledAppwrapper[idx] == aw.Name {
-			scaledAppwrapper[idx] = ""
-		}
-	}
-
-	pending, aw := r.IsAwPending(ctx)
-	if pending {
-		//demandPerInstanceType := r.discoverInstanceTypes(aw)
-		//r.scaleUp(ctx, aw, demandPerInstanceType)
 	}
 }
