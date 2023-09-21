@@ -35,32 +35,6 @@ func createOCMConnection() (*ocmsdk.Connection, error) {
 	return connection, nil
 }
 
-func scaleMachinePool(aw *arbv1.AppWrapper, userRequestedInstanceType string, replicas int) {
-	connection, err := createOCMConnection()
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
-		return
-	}
-	defer connection.Close()
-
-	clusterMachinePools := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools()
-
-	m := make(map[string]string)
-	m[aw.Name] = aw.Name
-
-	machinePoolID := strings.ReplaceAll(aw.Name+"-"+userRequestedInstanceType, ".", "-")
-	createMachinePool, err := cmv1.NewMachinePool().ID(machinePoolID).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
-	if err != nil {
-		klog.Errorf(`Error building MachinePool: %v`, err)
-	}
-	klog.Infof("Built MachinePool with instance type %v and name %v", userRequestedInstanceType, createMachinePool.ID())
-	response, err := clusterMachinePools.Add().Body(createMachinePool).SendContext(context.Background())
-	if err != nil {
-		klog.Errorf(`Error creating MachinePool: %v`, err)
-	}
-	klog.Infof("Created MachinePool: %v", response)
-}
-
 func hasAwLabel(machinePool *cmv1.MachinePool, aw *arbv1.AppWrapper) bool {
 	labels := machinePool.Labels()
 	for key, value := range labels {
