@@ -102,7 +102,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	// Adds finalizer to the appwrapper if it doesn't exist
-	if !controllerutil.ContainsFinalizer(&appwrapper, finalizerName) {
+	if !controllerutil.ContainsFinalizer(&appwrapper, finalizerName) && appwrapper.Status.State != "Completed" {
 		controllerutil.AddFinalizer(&appwrapper, finalizerName)
 		if err := r.Update(ctx, &appwrapper); err != nil {
 			return ctrl.Result{}, err
@@ -110,7 +110,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	if !appwrapper.ObjectMeta.DeletionTimestamp.IsZero() {
+	if !appwrapper.ObjectMeta.DeletionTimestamp.IsZero() || appwrapper.Status.State == "Completed" {
 		if err := r.finalizeScalingDownMachines(ctx, &appwrapper); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -126,22 +126,13 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if useMachineSets {
 		if reuse {
 			res, err := r.reconcileReuseMachineSet(ctx, &appwrapper, demandPerInstanceType)
-			if err != nil {
-				klog.Infof("Error reconciling MachineSet: %s", err)
-			}
 			return res, err
 		} else {
 			res, err := r.reconcileCreateMachineSet(ctx, &appwrapper, demandPerInstanceType)
-			if err != nil {
-				klog.Infof("Error reconciling MachineSet: %s", err)
-			}
 			return res, err
 		}
 	} else {
 		res, err := r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
-		if err != nil {
-			klog.Infof("Error reconciling MachinePool: %s", err)
-		}
 		return res, err
 	}
 }
