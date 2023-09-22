@@ -11,14 +11,6 @@ on:
       mcad-version:
         description: 'Published version of multi-cluster-app-dispatcher to be used as a dependency for InstaScale (for example: v0.0.0)'
         required: true
-      is-stable:
-        description: 'Select if the built image should be tagged as stable'
-        required: true
-        type: boolean
-      quay-organization:
-        description: 'Quay organization used to push the built images to'
-        required: false
-        default: 'project-codeflare'
 
 jobs:
   release:
@@ -60,23 +52,6 @@ jobs:
       run: go build -o bin/manager main.go
     - name: Test
       run: go test -v ./...
-
-    # Build and push the image
-    - name: Login to Quay.io
-      uses: redhat-actions/podman-login@v1
-      with:
-        username: ${{ secrets.QUAY_ID }}
-        password: ${{ secrets.QUAY_TOKEN }}
-        registry: quay.io
-    - name: Image Build and Push
-      run: |
-        make image-build -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }}
-        make image-push -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }}
-    - name: Image Push as stable tag
-      if: ${{ inputs.is-stable }}
-      run: |
-        podman tag quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:${{ github.event.inputs.tag }} quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:stable
-        make image-push -e IMG=quay.io/${{ github.event.inputs.quay-organization }}/instascale-controller:stable
 
     # Update dependencies
     - name: Commit go.mod and go.sum changes to the branch
