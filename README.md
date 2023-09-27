@@ -32,7 +32,13 @@ Key features:
 - To build and release a docker image for controller : `make IMG=quay.io/project-codeflare/instascale:<TAG> image-build image-push`
 - Note that the other contents of the Makefile (as well as the `config` and `bin` dirs) exist for future operator development, and are not currently utilized
 ## Deployment
-- Deploy InstaScale using: `make deploy`
+- Deploy InstaScale (latest) using: `make deploy`
+
+- Optionally, to deploy a custom image of InstaScale you can use the `custom-deploy` make target to build, push, and deploy your image of InstaScale on your Kubernetes cluster:
+```
+make custom-deploy ENGINE=<podman or docker> IMG=quay.io/<username>/instascale:<image tag>
+```
+Note: This assumes you are logged into your quay.io account on your local machine, and your kubeconfig is pointing to the cluster you want to deploy InstaScale on.
 
 ## Running an InstaScale deployment locally with Visual Studio Code
 - Deploy MCAD using steps [here](https://github.com/project-codeflare/multi-cluster-app-dispatcher/blob/main/doc/deploy/deployment.md).
