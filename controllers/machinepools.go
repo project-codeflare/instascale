@@ -36,11 +36,9 @@ func createOCMConnection() (*ocmsdk.Connection, error) {
 }
 
 func hasAwLabel(machinePool *cmv1.MachinePool, aw *arbv1.AppWrapper) bool {
-	labels := machinePool.Labels()
-	for key, value := range labels {
-		if key == aw.Name && value == aw.Name {
-			return true
-		}
+	value, ok := machinePool.Labels()[aw.Name]
+	if ok && value == aw.Name {
+		return true
 	}
 	return false
 }

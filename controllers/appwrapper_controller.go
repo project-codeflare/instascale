@@ -47,19 +47,16 @@ type AppWrapperReconciler struct {
 }
 
 var (
-	reuse                = true
+	deletionMessage      string
 	ocmClusterID         string
 	ocmToken             string
-	useMachineSets       bool
 	maxScaleNodesAllowed int
 )
 
 const (
-	namespaceToList   = "openshift-machine-api"
-	minResyncPeriod   = 10 * time.Minute
-	pullSecretKey     = ".dockerconfigjson"
-	pullSecretAuthKey = "cloud.openshift.com"
-	finalizerName     = "instascale.codeflare.dev/finalizer"
+	namespaceToList = "openshift-machine-api"
+	minResyncPeriod = 10 * time.Minute
+	finalizerName   = "instascale.codeflare.dev/finalizer"
 )
 
 // +kubebuilder:rbac:groups=workload.codeflare.dev,resources=appwrappers,verbs=get;list;watch;create;update;patch;delete
@@ -88,8 +85,10 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// todo: Move the getOCMClusterID call out of reconcile loop.
 	// Only reason we are calling it here is that the client is not able to make
 	// calls until it is started, so SetupWithManager is not working.
-	if !useMachineSets && ocmClusterID == "" {
-		r.getOCMClusterID(ctx)
+	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil && ocmClusterID == "" {
+		if err := r.getOCMClusterID(ctx); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 	var appwrapper arbv1.AppWrapper
 
@@ -98,11 +97,12 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			// ignore not-found errors, since we can get them on delete requests.
 			return ctrl.Result{}, nil
 		}
-		klog.Error(err, "unable to fetch appwrapper")
+		// Error reading the object - requeue the request.
+		return ctrl.Result{}, err
 	}
 
 	// Adds finalizer to the appwrapper if it doesn't exist
-	if !controllerutil.ContainsFinalizer(&appwrapper, finalizerName) && appwrapper.Status.State != "Completed" {
+	if !controllerutil.ContainsFinalizer(&appwrapper, finalizerName) {
 		controllerutil.AddFinalizer(&appwrapper, finalizerName)
 		if err := r.Update(ctx, &appwrapper); err != nil {
 			return ctrl.Result{}, err
@@ -110,7 +110,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	if !appwrapper.ObjectMeta.DeletionTimestamp.IsZero() || appwrapper.Status.State == "Completed" {
+	if !appwrapper.ObjectMeta.DeletionTimestamp.IsZero() || appwrapper.Status.State == arbv1.AppWrapperStateCompleted {
 		if err := r.finalizeScalingDownMachines(ctx, &appwrapper); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -123,38 +123,48 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 	demandPerInstanceType := r.discoverInstanceTypes(&appwrapper)
 	//for userRequestedInstanceType := range demandPerInstanceType {
-	if useMachineSets {
-		if reuse {
-			res, err := r.reconcileReuseMachineSet(ctx, &appwrapper, demandPerInstanceType)
-			return res, err
-		} else {
-			res, err := r.reconcileCreateMachineSet(ctx, &appwrapper, demandPerInstanceType)
-			return res, err
-		}
+	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
+		return r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
 	} else {
-		res, err := r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
-		return res, err
+		if r.Config.Reuse {
+			return r.reconcileReuseMachineSet(ctx, &appwrapper, demandPerInstanceType)
+		} else {
+			return r.reconcileCreateMachineSet(ctx, &appwrapper, demandPerInstanceType)
+		}
 	}
 }
 
 func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, appwrapper *arbv1.AppWrapper) error {
-	if useMachineSets {
-		if reuse {
-			matchedAw := r.findExactMatch(ctx, appwrapper)
-			if matchedAw != nil {
-				klog.Infof("Appwrapper %s deleted, swapping machines to %s", appwrapper.Name, matchedAw.Name)
-				r.swapNodeLabels(ctx, appwrapper, matchedAw)
-			} else {
-				klog.Infof("Appwrapper %s deleted, scaling down machines", appwrapper.Name)
-
-				r.annotateToDeleteMachine(ctx, appwrapper)
-			}
-		} else {
-			klog.Infof("Appwrapper deleted scale-down machineset: %s ", appwrapper.Name)
-			r.deleteMachineSet(ctx, appwrapper)
+	if appwrapper.Status.State == "Completed" {
+		deletionMessage = "completed"
+	} else {
+		deletionMessage = "deleted"
+	}
+	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
+		klog.Infof("Appwrapper %s scale-down machine pool: %s ", deletionMessage, appwrapper.Name)
+		if _, err := r.deleteMachinePool(ctx, appwrapper); err != nil {
+			return err
 		}
 	} else {
-		r.deleteMachinePool(ctx, appwrapper)
+		if r.Config.Reuse {
+			matchedAw := r.findExactMatch(ctx, appwrapper)
+			if matchedAw != nil {
+				klog.Infof("Appwrapper %s %s, swapping machines to %s", appwrapper.Name, deletionMessage, matchedAw.Name)
+				if err := r.swapNodeLabels(ctx, appwrapper, matchedAw); err != nil {
+					return err
+				}
+			} else {
+				klog.Infof("Appwrapper %s %s, scaling down machines", appwrapper.Name, deletionMessage)
+				if err := r.annotateToDeleteMachine(ctx, appwrapper); err != nil {
+					return err
+				}
+			}
+		} else {
+			klog.Infof("Appwrapper %s scale-down machineset: %s ", deletionMessage, appwrapper.Name)
+			if err := r.deleteMachineSet(ctx, appwrapper); err != nil {
+				return err
+			}
+		}
 	}
 	return nil
 }
@@ -172,9 +182,8 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 
 	maxScaleNodesAllowed = int(r.Config.MaxScaleoutAllowed)
 
-	useMachineSets = true
 	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
-		if ocmSecret, err := r.getOCMSecret(ocmSecretRef); err != nil {
+		if ocmSecret, err := r.getOCMSecret(context.Background(), ocmSecretRef); err != nil {
 			return fmt.Errorf("error reading OCM Secret from ref %q: %w", ocmSecretRef, err)
 		} else if token := ocmSecret.Data["token"]; len(token) > 0 {
 			ocmToken = string(token)
@@ -184,7 +193,6 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		if ok, err := machinePoolExists(); err != nil {
 			return err
 		} else if ok {
-			useMachineSets = false
 			klog.Info("Using machine pools for cluster auto-scaling")
 		}
 	}
@@ -194,21 +202,8 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Complete(r)
 }
 
-func (r *AppWrapperReconciler) getOCMSecret(secretRef *corev1.SecretReference) (*corev1.Secret, error) {
-	return r.kubeClient.CoreV1().Secrets(secretRef.Namespace).Get(context.Background(), secretRef.Name, metav1.GetOptions{})
-}
-
-func (r *AppWrapperReconciler) ocmSecretExists(namespace string) bool {
-	instascaleOCMSecret, err := r.kubeClient.CoreV1().Secrets(namespace).Get(context.Background(), "instascale-ocm-secret", metav1.GetOptions{})
-	if err != nil {
-		klog.Errorf("Error getting instascale-ocm-secret from namespace %v: %v", namespace, err)
-		klog.Infof("If you are looking to use OCM, ensure that the 'instascale-ocm-secret' secret is available on the cluster within namespace %v", namespace)
-		klog.Infof("Setting useMachineSets to %v.", useMachineSets)
-		return false
-	}
-
-	ocmToken = string(instascaleOCMSecret.Data["token"])
-	return true
+func (r *AppWrapperReconciler) getOCMSecret(ctx context.Context, secretRef *corev1.SecretReference) (*corev1.Secret, error) {
+	return r.kubeClient.CoreV1().Secrets(secretRef.Namespace).Get(ctx, secretRef.Name, metav1.GetOptions{})
 }
 
 func (r *AppWrapperReconciler) discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
@@ -237,10 +232,6 @@ func (r *AppWrapperReconciler) discoverInstanceTypes(aw *arbv1.AppWrapper) map[s
 	return demandMapPerInstanceType
 }
 
-func canScaleMachinepool(demandPerInstanceType map[string]int) bool {
-	return true
-}
-
 func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.AppWrapper) *arbv1.AppWrapper {
 	var match *arbv1.AppWrapper = nil
 	appwrappers := arbv1.AppWrapperList{}
@@ -261,7 +252,7 @@ func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.App
 	var existingAcquiredMachineTypes = ""
 
 	for _, eachAw := range appwrappers.Items {
-		if eachAw.Status.State != "Pending" {
+		if eachAw.Status.State != arbv1.AppWrapperStateEnqueued {
 			continue
 		}
 		match = &eachAw
@@ -269,12 +260,4 @@ func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.App
 	}
 	return match
 
-}
-
-func (r *AppWrapperReconciler) scaleDown(ctx context.Context, aw *arbv1.AppWrapper) {
-	if reuse {
-		r.annotateToDeleteMachine(ctx, aw)
-	} else {
-		r.deleteMachineSet(ctx, aw)
-	}
 }
