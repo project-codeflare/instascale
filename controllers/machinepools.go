@@ -16,7 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-func createOCMConnection() (*ocmsdk.Connection, error) {
+func (r *AppWrapperReconciler) createOCMConnection() (*ocmsdk.Connection, error) {
 	logger, err := ocmsdk.NewGoLoggerBuilder().
 		Debug(false).
 		Build()
@@ -26,7 +26,7 @@ func createOCMConnection() (*ocmsdk.Connection, error) {
 
 	connection, err := ocmsdk.NewConnectionBuilder().
 		Logger(logger).
-		Tokens(ocmToken).
+		Tokens(r.ocmToken).
 		Build()
 	if err != nil {
 		return nil, fmt.Errorf("can't build connection: %v", err)
@@ -46,14 +46,14 @@ func hasAwLabel(machinePool *cmv1.MachinePool, aw *arbv1.AppWrapper) bool {
 func (r *AppWrapperReconciler) scaleMachinePool(ctx context.Context, aw *arbv1.AppWrapper, demandPerInstanceType map[string]int) (ctrl.Result, error) {
 	for userRequestedInstanceType := range demandPerInstanceType {
 		replicas := demandPerInstanceType[userRequestedInstanceType]
-		connection, err := createOCMConnection()
+		connection, err := r.createOCMConnection()
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
 			return ctrl.Result{}, err
 		}
 		defer connection.Close()
 
-		clusterMachinePools := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools()
+		clusterMachinePools := connection.ClustersMgmt().V1().Clusters().Cluster(r.ocmClusterID).MachinePools()
 
 		response, err := clusterMachinePools.List().SendContext(ctx)
 		if err != nil {
@@ -91,21 +91,21 @@ func (r *AppWrapperReconciler) scaleMachinePool(ctx context.Context, aw *arbv1.A
 }
 
 func (r *AppWrapperReconciler) deleteMachinePool(ctx context.Context, aw *arbv1.AppWrapper) (ctrl.Result, error) {
-	connection, err := createOCMConnection()
+	connection, err := r.createOCMConnection()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
 		return ctrl.Result{}, err
 	}
 	defer connection.Close()
 
-	machinePoolsConnection := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools().List()
+	machinePoolsConnection := connection.ClustersMgmt().V1().Clusters().Cluster(r.ocmClusterID).MachinePools().List()
 
 	machinePoolsListResponse, _ := machinePoolsConnection.Send()
 	machinePoolsList := machinePoolsListResponse.Items()
 	machinePoolsList.Range(func(index int, item *cmv1.MachinePool) bool {
 		id, _ := item.GetID()
 		if strings.Contains(id, aw.Name) {
-			targetMachinePool, err := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools().MachinePool(id).Delete().SendContext(ctx)
+			targetMachinePool, err := connection.ClustersMgmt().V1().Clusters().Cluster(r.ocmClusterID).MachinePools().MachinePool(id).Delete().SendContext(ctx)
 			if err != nil {
 				klog.Infof("Error deleting target machinepool %v", targetMachinePool)
 			}
@@ -116,14 +116,14 @@ func (r *AppWrapperReconciler) deleteMachinePool(ctx context.Context, aw *arbv1.
 	return ctrl.Result{Requeue: false}, nil
 }
 
-func machinePoolExists() (bool, error) {
-	connection, err := createOCMConnection()
+func (r *AppWrapperReconciler) machinePoolExists() (bool, error) {
+	connection, err := r.createOCMConnection()
 	if err != nil {
 		return false, fmt.Errorf("error creating OCM connection: %w", err)
 	}
 	defer connection.Close()
 
-	machinePools := connection.ClustersMgmt().V1().Clusters().Cluster(ocmClusterID).MachinePools()
+	machinePools := connection.ClustersMgmt().V1().Clusters().Cluster(r.ocmClusterID).MachinePools()
 	return machinePools != nil, nil
 }
 
@@ -137,7 +137,7 @@ func (r *AppWrapperReconciler) getOCMClusterID(ctx context.Context) error {
 
 	internalClusterID := string(cv.Spec.ClusterID)
 
-	connection, err := createOCMConnection()
+	connection, err := r.createOCMConnection()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
 	}
@@ -152,7 +152,7 @@ func (r *AppWrapperReconciler) getOCMClusterID(ctx context.Context) error {
 	}
 
 	response.Items().Each(func(cluster *cmv1.Cluster) bool {
-		ocmClusterID = cluster.ID()
+		r.ocmClusterID = cluster.ID()
 		fmt.Printf("%s - %s - %s\n", cluster.ID(), cluster.Name(), cluster.State())
 		return true
 	})
