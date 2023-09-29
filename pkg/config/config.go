@@ -27,7 +27,7 @@ type InstaScaleConfiguration struct {
 	// maxScaleoutAllowed defines the upper limit for the number of cluster nodes
 	// that can be scaled out by InstaScale.
 	MaxScaleoutAllowed int32 `json:"maxScaleoutAllowed"`
-	// reuse is a bool which is used to decide if machineSets are created from a copy
-	// or reused by instascale
-	Reuse bool `json:"reuse,omitempty"`
+	// machineSetsStrategy is a string which is used to decide if machineSets are created from a copy
+	// or reused by instascale by using either the Reuse or Duplicate string.
+	MachineSetsStrategy string `json:"machineSetsStrategy,omitempty"`
 }

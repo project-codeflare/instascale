@@ -96,19 +96,25 @@ func main() {
 
 	// InstaScale configuration
 	cfg := config.InstaScaleConfiguration{
-		MaxScaleoutAllowed: 3,
+		MaxScaleoutAllowed:  3,
+		MachineSetsStrategy: "reuse",
 	}
 
 	// Source InstaScale ConfigMap
 	if InstaScaleConfigMap, err := kubeClient.CoreV1().ConfigMaps(configsNamespace).Get(ctx, "instascale-config", metav1.GetOptions{}); err != nil {
 		setupLog.Error(err, "Error reading 'instascale-config' ConfigMap")
 		os.Exit(1)
-	} else if maxScaleoutAllowed := InstaScaleConfigMap.Data["maxScaleoutAllowed"]; maxScaleoutAllowed != "" {
-		if max, err := strconv.Atoi(maxScaleoutAllowed); err != nil {
-			setupLog.Error(err, "Error converting 'maxScaleoutAllowed' to integer")
-			os.Exit(1)
-		} else {
-			cfg.MaxScaleoutAllowed = int32(max)
+	} else {
+		if maxScaleoutAllowed := InstaScaleConfigMap.Data["maxScaleoutAllowed"]; maxScaleoutAllowed != "" {
+			if max, err := strconv.Atoi(maxScaleoutAllowed); err != nil {
+				setupLog.Error(err, "Error converting 'maxScaleoutAllowed' to integer")
+				os.Exit(1)
+			} else {
+				cfg.MaxScaleoutAllowed = int32(max)
+			}
+		}
+		if machineSetsStrategy := InstaScaleConfigMap.Data["machineSetsStrategy"]; machineSetsStrategy != "" {
+			cfg.MachineSetsStrategy = machineSetsStrategy
 		}
 	}
 
@@ -142,7 +148,7 @@ func main() {
 		Client: mgr.GetClient(),
 		Scheme: mgr.GetScheme(),
 		Config: cfg,
-	}).SetupWithManager(mgr); err != nil {
+	}).SetupWithManager(ctx, mgr); err != nil {
 		setupLog.Error(err, "unable to create controller", "controller", "AppWrapper")
 		os.Exit(1)
 	}

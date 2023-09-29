@@ -41,15 +41,16 @@ import (
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
 	client.Client
-	Scheme     *runtime.Scheme
-	Config     config.InstaScaleConfiguration
-	kubeClient *kubernetes.Clientset
+	Scheme         *runtime.Scheme
+	Config         config.InstaScaleConfiguration
+	kubeClient     *kubernetes.Clientset
+	ocmClusterID   string
+	ocmToken       string
+	useMachineSets bool
 }
 
 var (
 	deletionMessage      string
-	ocmClusterID         string
-	ocmToken             string
 	maxScaleNodesAllowed int
 )
 
@@ -85,9 +86,9 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	// todo: Move the getOCMClusterID call out of reconcile loop.
 	// Only reason we are calling it here is that the client is not able to make
 	// calls until it is started, so SetupWithManager is not working.
-	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil && ocmClusterID == "" {
+	if !r.useMachineSets && r.ocmClusterID == "" {
 		if err := r.getOCMClusterID(ctx); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{Requeue: true, RequeueAfter: timeFiveSeconds}, err
 		}
 	}
 	var appwrapper arbv1.AppWrapper
@@ -105,7 +106,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if !controllerutil.ContainsFinalizer(&appwrapper, finalizerName) {
 		controllerutil.AddFinalizer(&appwrapper, finalizerName)
 		if err := r.Update(ctx, &appwrapper); err != nil {
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: timeFiveSeconds}, nil
 		}
 		return ctrl.Result{}, nil
 	}
@@ -122,31 +123,28 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	demandPerInstanceType := r.discoverInstanceTypes(&appwrapper)
-	//for userRequestedInstanceType := range demandPerInstanceType {
 	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
 		return r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
 	} else {
-		if r.Config.Reuse {
+		switch strings.ToLower(r.Config.MachineSetsStrategy) {
+		case "reuse":
 			return r.reconcileReuseMachineSet(ctx, &appwrapper, demandPerInstanceType)
-		} else {
+		case "duplicate":
 			return r.reconcileCreateMachineSet(ctx, &appwrapper, demandPerInstanceType)
 		}
 	}
+	return ctrl.Result{}, nil
 }
 
 func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, appwrapper *arbv1.AppWrapper) error {
-	if appwrapper.Status.State == "Completed" {
+	if appwrapper.Status.State == arbv1.AppWrapperStateCompleted {
 		deletionMessage = "completed"
 	} else {
 		deletionMessage = "deleted"
 	}
-	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
-		klog.Infof("Appwrapper %s scale-down machine pool: %s ", deletionMessage, appwrapper.Name)
-		if _, err := r.deleteMachinePool(ctx, appwrapper); err != nil {
-			return err
-		}
-	} else {
-		if r.Config.Reuse {
+	if r.useMachineSets {
+		switch strings.ToLower(r.Config.MachineSetsStrategy) {
+		case "reuse":
 			matchedAw := r.findExactMatch(ctx, appwrapper)
 			if matchedAw != nil {
 				klog.Infof("Appwrapper %s %s, swapping machines to %s", appwrapper.Name, deletionMessage, matchedAw.Name)
@@ -159,18 +157,23 @@ func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, 
 					return err
 				}
 			}
-		} else {
+		case "duplicate":
 			klog.Infof("Appwrapper %s scale-down machineset: %s ", deletionMessage, appwrapper.Name)
 			if err := r.deleteMachineSet(ctx, appwrapper); err != nil {
 				return err
 			}
+		}
+	} else {
+		klog.Infof("Appwrapper %s scale-down machine pool: %s ", deletionMessage, appwrapper.Name)
+		if _, err := r.deleteMachinePool(ctx, appwrapper); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 // SetupWithManager sets up the controller with the Manager.
-func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
+func (r *AppWrapperReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 
 	restConfig := mgr.GetConfig()
 
@@ -181,16 +184,17 @@ func (r *AppWrapperReconciler) SetupWithManager(mgr ctrl.Manager) error {
 	}
 
 	maxScaleNodesAllowed = int(r.Config.MaxScaleoutAllowed)
-
+	r.useMachineSets = true
 	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
-		if ocmSecret, err := r.getOCMSecret(context.Background(), ocmSecretRef); err != nil {
+		r.useMachineSets = false
+		if ocmSecret, err := r.getOCMSecret(ctx, ocmSecretRef); err != nil {
 			return fmt.Errorf("error reading OCM Secret from ref %q: %w", ocmSecretRef, err)
 		} else if token := ocmSecret.Data["token"]; len(token) > 0 {
-			ocmToken = string(token)
+			r.ocmToken = string(token)
 		} else {
 			return fmt.Errorf("token is missing from OCM Secret %q", ocmSecretRef)
 		}
-		if ok, err := machinePoolExists(); err != nil {
+		if ok, err := r.machinePoolExists(); err != nil {
 			return err
 		} else if ok {
 			klog.Info("Using machine pools for cluster auto-scaling")
