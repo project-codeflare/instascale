@@ -44,20 +44,20 @@ func hasAwLabel(machinePool *cmv1.MachinePool, aw *arbv1.AppWrapper) bool {
 }
 
 func (r *AppWrapperReconciler) scaleMachinePool(ctx context.Context, aw *arbv1.AppWrapper, demandPerInstanceType map[string]int) (ctrl.Result, error) {
+	connection, err := r.createOCMConnection()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
+		return ctrl.Result{}, err
+	}
+	defer connection.Close()
 	for userRequestedInstanceType := range demandPerInstanceType {
 		replicas := demandPerInstanceType[userRequestedInstanceType]
-		connection, err := r.createOCMConnection()
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
-			return ctrl.Result{}, err
-		}
-		defer connection.Close()
 
 		clusterMachinePools := connection.ClustersMgmt().V1().Clusters().Cluster(r.ocmClusterID).MachinePools()
 
 		response, err := clusterMachinePools.List().SendContext(ctx)
 		if err != nil {
-			klog.Errorf("error retrieving machine pools: %v", err)
+			return ctrl.Result{}, err
 		}
 
 		numberOfMachines := 0
