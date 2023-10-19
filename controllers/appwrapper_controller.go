@@ -255,12 +255,20 @@ func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.App
 	}
 	var existingAcquiredMachineTypes = ""
 
+	for key, value := range aw.Labels {
+		if key == "orderedinstance" {
+			existingAcquiredMachineTypes = value
+		}
+	}
+
 	for _, eachAw := range appwrappers.Items {
 		if eachAw.Status.State != arbv1.AppWrapperStateEnqueued {
-			continue
+			if eachAw.Labels["orderedinstance"] == existingAcquiredMachineTypes {
+				match = &eachAw
+				klog.Infof("Found exact match, %v appwrapper has acquired machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
+				break
+			}
 		}
-		match = &eachAw
-		klog.Infof("Found exact match, %v appwrapper has acquired machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
 	}
 	return match
 
