@@ -25,28 +25,6 @@ const (
 	timeThirtySeconds = 30 * time.Second
 )
 
-func (r *AppWrapperReconciler) checkExistingMachineSet(ctx context.Context, machineSetName string) bool {
-	// Set up the Object key with the requested app wrapper name and requested type
-	key := client.ObjectKey{
-		Name:      machineSetName,
-		Namespace: namespaceToList,
-	}
-
-	machineSet := &machinev1beta1.MachineSet{}
-	err := r.Get(ctx, key, machineSet)
-	if err != nil {
-		// Check if the error is due to the MachineSet not existing
-		if client.IgnoreNotFound(err) != nil {
-			// return error if it there is a different error for not getting the MachineSet
-			klog.Infof("Error getting MachineSet: %s", err)
-		}
-		// MachineSet does not exist
-		return false
-	}
-	// The MachineSet exists
-	return true
-}
-
 func (r *AppWrapperReconciler) reconcileCreateMachineSet(ctx context.Context, aw *arbv1.AppWrapper, demandMapPerInstanceType map[string]int) (ctrl.Result, error) {
 
 	allMachineSet := machinev1beta1.MachineSetList{}
@@ -498,94 +476,6 @@ func (r *AppWrapperReconciler) annotateToDeleteMachine(ctx context.Context, aw *
 	return nil
 }
 
-/*
-	func (r *AppWrapperReconciler) annotateToDeleteMachine(ctx context.Context, aw *arbv1.AppWrapper) error {
-		label := fmt.Sprintf("%s-%s", aw.Name, aw.Namespace)
-		// We get a list of Nodes with the AppWrapper name and correct instance type
-		labelSelector := labels.SelectorFromSet(labels.Set(map[string]string{
-			label: label,
-		}))
-		listOptions := &metav1.ListOptions{
-			LabelSelector: labelSelector.String(),
-		}
-		// List nodes with the AppWrapper name
-		nodes, _ := r.kubeClient.CoreV1().Nodes().List(ctx, *listOptions)
-		for _, node := range nodes.Items {
-			klog.Infof("Filtered node name is %v", aw.Name)
-			for k, v := range node.Annotations {
-				if k == "machine.openshift.io/machine" {
-					machineName := strings.Split(v, "/")
-					klog.Infof("The machine name to be annotated %v", machineName[1])
-					allMachines := machinev1beta1.MachineList{}
-					errm := r.List(ctx, &allMachines)
-					if errm != nil {
-						klog.Infof("Error listing machines: %v", errm)
-						return errm
-					}
-					for _, aMachine := range allMachines.Items {
-						//remove index hardcoding
-						if aMachine.Name == machineName[1] {
-							updateMachine := aMachine.DeepCopy()
-							updateMachine.Annotations["machine.openshift.io/cluster-api-delete-machine"] = "true"
-							if err := r.Update(ctx, updateMachine); err != nil {
-								return err
-							}
-							var updateMachineset string = ""
-							for k, v := range updateMachine.Labels {
-								if k == "machine.openshift.io/cluster-api-machineset" {
-									updateMachineset = v
-									klog.Infof("Machineset to update is %v", updateMachineset)
-								}
-							}
-							if updateMachineset != "" {
-								allMachineSet := machinev1beta1.MachineSetList{}
-								err := r.List(ctx, &allMachineSet)
-								if err != nil {
-									klog.Infof("Machineset retrieval error")
-									return err
-								}
-								for _, aMachineSet := range allMachineSet.Items {
-									if aMachineSet.Name == updateMachineset {
-										klog.Infof("Existing machineset replicas %v", &aMachineSet.Spec.Replicas)
-										//scale down is harded coded to 1??
-										newReplicas := *aMachineSet.Spec.Replicas - int32(1)
-										updateMsReplicas := aMachineSet.DeepCopy()
-										updateMsReplicas.Spec.Replicas = &newReplicas
-										err := r.Update(ctx, updateMsReplicas)
-										if err != nil {
-											klog.Infof("Error updating MachineSet: %s", err)
-											return err
-										}
-										err = r.Get(ctx, types.NamespacedName{Namespace: namespaceToList}, updateMsReplicas)
-										if err != nil {
-											klog.Infof("Error updating MachineSet: %s", err)
-											return err
-										}
-										if updateMsReplicas.Labels[fmt.Sprintf("instascale.codeflare.dev-%s-%s", aw.Name, aw.Namespace)] != "" {
-											if err := r.removeMachineSetLabel(ctx, aw, aMachineSet.Name); err != nil {
-												return err
-											}
-										}
-										klog.Infof("Replica update successful")
-									}
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-
-			for machineSetName := range machineSetNames {
-				if updateMsReplicas.Labels[fmt.Sprintf("instascale.codeflare.dev-%s-%s", aw.Name, aw.Namespace)] != "" {
-					if err := r.removeMachineSetLabel(ctx, aw, aMachineSet.Name); err != nil {
-						return err
-					}
-				}
-			}
-		return nil
-	}
-*/
 func (r *AppWrapperReconciler) patchMachineLabels(ctx context.Context, oldAw *arbv1.AppWrapper, newAw *arbv1.AppWrapper, machineName string) error {
 	// Retrieve the machine object
 	machine := &machinev1beta1.Machine{}
