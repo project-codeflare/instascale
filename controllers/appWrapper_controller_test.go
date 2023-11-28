@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"testing"
 
 	"github.com/onsi/gomega"
@@ -99,7 +100,7 @@ func (r *AppWrapperReconciler) TestDiscoverInstanceTypes(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			result := r.discoverInstanceTypes(test.input)
+			result := r.discoverInstanceTypes(context.TODO(), test.input)
 			g.Expect(result).To(gomega.Equal(test.expected))
 		})
 	}

@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math/rand"
@@ -8,7 +9,7 @@ import (
 
 	machinev1 "github.com/openshift/api/machine/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/klog"
+	ctrl "sigs.k8s.io/controller-runtime"
 )
 
 func resyncPeriod() func() time.Duration {
@@ -19,7 +20,8 @@ func resyncPeriod() func() time.Duration {
 }
 
 // ProviderSpecFromRawExtension unmarshals the JSON-encoded spec
-func ProviderSpecFromRawExtension(rawExtension *runtime.RawExtension) (*machinev1.AWSMachineProviderConfig, error) {
+func ProviderSpecFromRawExtension(ctx context.Context, rawExtension *runtime.RawExtension) (*machinev1.AWSMachineProviderConfig, error) {
+	logger := ctrl.LoggerFrom(ctx)
 	if rawExtension == nil {
 		return &machinev1.AWSMachineProviderConfig{}, nil
 	}
@@ -29,7 +31,10 @@ func ProviderSpecFromRawExtension(rawExtension *runtime.RawExtension) (*machinev
 		return nil, fmt.Errorf("error unmarshalling providerSpec: %v", err)
 	}
 
-	klog.V(5).Infof("Got provider spec from raw extension: %+v", spec)
+	logger.V(5).Info(
+		"Got provider spec from raw extension",
+		"awsMachineProviderConfig", spec,
+	)
 	return spec, nil
 }
 

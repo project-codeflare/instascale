@@ -29,7 +29,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes"
-	"k8s.io/klog"
 
 	"k8s.io/apimachinery/pkg/labels"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -81,7 +80,6 @@ const (
 // For more details, check Reconcile and its Result here:
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-
 	_ = log.FromContext(ctx)
 	// todo: Move the getOCMClusterID call out of reconcile loop.
 	// Only reason we are calling it here is that the client is not able to make
@@ -122,7 +120,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	demandPerInstanceType := r.discoverInstanceTypes(&appwrapper)
+	demandPerInstanceType := r.discoverInstanceTypes(ctx, &appwrapper)
 	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
 		return r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
 	} else {
@@ -137,6 +135,7 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 }
 
 func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, appwrapper *arbv1.AppWrapper) error {
+	logger := ctrl.LoggerFrom(ctx)
 	if appwrapper.Status.State == arbv1.AppWrapperStateCompleted {
 		deletionMessage = "completed"
 	} else {
@@ -147,24 +146,41 @@ func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, 
 		case "reuse":
 			matchedAw := r.findExactMatch(ctx, appwrapper)
 			if matchedAw != nil {
-				klog.Infof("Appwrapper %s %s, swapping machines to %s", appwrapper.Name, deletionMessage, matchedAw.Name)
+				logger.Info(
+					"AppWrapper deleted transferring machines",
+					"oldAppWrapper", appwrapper,
+					"deletionMessage", deletionMessage,
+					"newAppWrapper", matchedAw,
+				)
 				if err := r.swapNodeLabels(ctx, appwrapper, matchedAw); err != nil {
 					return err
 				}
 			} else {
-				klog.Infof("Appwrapper %s %s, scaling down machines", appwrapper.Name, deletionMessage)
+				logger.Info(
+					"Scaling down machines associated with deleted AppWrapper",
+					"appWrapper", appwrapper,
+					"deletionMessage", deletionMessage,
+				)
 				if err := r.annotateToDeleteMachine(ctx, appwrapper); err != nil {
 					return err
 				}
 			}
 		case "duplicate":
-			klog.Infof("Appwrapper %s scale-down machineset: %s ", deletionMessage, appwrapper.Name)
+			logger.Info(
+				"AppWrapper deleted, scaling down machineset",
+				"appWrapper", appwrapper,
+				"deletionMessage", deletionMessage,
+			)
 			if err := r.deleteMachineSet(ctx, appwrapper); err != nil {
 				return err
 			}
 		}
 	} else {
-		klog.Infof("Appwrapper %s scale-down machine pool: %s ", deletionMessage, appwrapper.Name)
+		logger.Info(
+			"AppWrapper deleted, scaling down machine pool",
+			"appWrapper", appwrapper,
+			"deletionMessage", deletionMessage,
+		)
 		if _, err := r.deleteMachinePool(ctx, appwrapper); err != nil {
 			return err
 		}
@@ -175,6 +191,7 @@ func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, 
 // SetupWithManager sets up the controller with the Manager.
 func (r *AppWrapperReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 
+	logger := ctrl.LoggerFrom(ctx)
 	restConfig := mgr.GetConfig()
 
 	var err error
@@ -197,12 +214,12 @@ func (r *AppWrapperReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 		if ok, err := r.machinePoolExists(); err != nil {
 			return err
 		} else if ok {
-			klog.Info("Using machine pools for cluster auto-scaling")
+			logger.Info("Using machine pools for cluster auto-scaling")
 		}
 	}
 
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&arbv1.AppWrapper{}).
+		For(&arbv1.AppWrapper{}).Named("instascale").
 		Complete(r)
 }
 
@@ -210,7 +227,8 @@ func (r *AppWrapperReconciler) getOCMSecret(ctx context.Context, secretRef *core
 	return r.kubeClient.CoreV1().Secrets(secretRef.Namespace).Get(ctx, secretRef.Name, metav1.GetOptions{})
 }
 
-func (r *AppWrapperReconciler) discoverInstanceTypes(aw *arbv1.AppWrapper) map[string]int {
+func (r *AppWrapperReconciler) discoverInstanceTypes(ctx context.Context, aw *arbv1.AppWrapper) map[string]int {
+	logger := ctrl.LoggerFrom(ctx)
 	demandMapPerInstanceType := make(map[string]int)
 	var instanceRequired []string
 	for k, v := range aw.Labels {
@@ -220,7 +238,10 @@ func (r *AppWrapperReconciler) discoverInstanceTypes(aw *arbv1.AppWrapper) map[s
 	}
 
 	if len(instanceRequired) < 1 {
-		klog.Infof("Found AW %s that cannot be scaled due to missing orderedinstance label", aw.ObjectMeta.Name)
+		logger.Info(
+			"AppWrapper cannot be scaled out due to missing orderedinstance label",
+			"appWrapper", aw,
+		)
 		return demandMapPerInstanceType
 	}
 
@@ -237,6 +258,7 @@ func (r *AppWrapperReconciler) discoverInstanceTypes(aw *arbv1.AppWrapper) map[s
 }
 
 func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.AppWrapper) *arbv1.AppWrapper {
+	logger := ctrl.LoggerFrom(ctx)
 	var match *arbv1.AppWrapper = nil
 	appwrappers := arbv1.AppWrapperList{}
 
@@ -250,7 +272,7 @@ func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.App
 
 	err := r.List(ctx, &appwrappers, listOptions)
 	if err != nil {
-		klog.Error("Cannot list queued appwrappers, associated machines will be deleted")
+		logger.Error(err, "Cannot list queued appwrappers, associated machines will be deleted")
 		return match
 	}
 	var existingAcquiredMachineTypes = ""
@@ -265,7 +287,11 @@ func (r *AppWrapperReconciler) findExactMatch(ctx context.Context, aw *arbv1.App
 		if eachAw.Status.State != arbv1.AppWrapperStateEnqueued {
 			if eachAw.Labels["orderedinstance"] == existingAcquiredMachineTypes {
 				match = &eachAw
-				klog.Infof("Found exact match, %v appwrapper has acquired machinetypes %v", eachAw.Name, existingAcquiredMachineTypes)
+				logger.Info(
+					"AppWrapper has successfully acquired requested machine types",
+					"appWrapper", eachAw,
+					"acquiredMachineTypes", existingAcquiredMachineTypes,
+				)
 				break
 			}
 		}

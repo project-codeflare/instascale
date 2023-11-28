@@ -49,7 +49,7 @@ import (
 
 var (
 	scheme   = runtime.NewScheme()
-	setupLog = ctrl.Log.WithName("setup")
+	setupLog = ctrl.Log.WithName("instascale").WithName("setup")
 )
 
 // +kubebuilder:rbac:groups="",resources=secrets,resourceNames=instascale-ocm-secret,verbs=get
