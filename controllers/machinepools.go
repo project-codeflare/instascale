@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	ocmsdk "github.com/openshift-online/ocm-sdk-go"
@@ -12,7 +11,6 @@ import (
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 
 	"k8s.io/apimachinery/pkg/types"
-	"k8s.io/klog"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
@@ -44,9 +42,10 @@ func hasAwLabel(machinePool *cmv1.MachinePool, aw *arbv1.AppWrapper) bool {
 }
 
 func (r *AppWrapperReconciler) scaleMachinePool(ctx context.Context, aw *arbv1.AppWrapper, demandPerInstanceType map[string]int) (ctrl.Result, error) {
+	logger := ctrl.LoggerFrom(ctx)
 	connection, err := r.createOCMConnection()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
+		logger.Error(err, "Error creating OCM connection")
 		return ctrl.Result{}, err
 	}
 	defer connection.Close()
@@ -72,28 +71,40 @@ func (r *AppWrapperReconciler) scaleMachinePool(ctx context.Context, aw *arbv1.A
 		if numberOfMachines != replicas {
 			m := make(map[string]string)
 			m[aw.Name] = aw.Name
-			klog.Infof("The instanceRequired array: %v", userRequestedInstanceType)
 
 			machinePoolID := strings.ReplaceAll(aw.Name+"-"+userRequestedInstanceType, ".", "-")
 			createMachinePool, err := cmv1.NewMachinePool().ID(machinePoolID).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
 			if err != nil {
-				klog.Errorf(`Error building MachinePool: %v`, err)
+				logger.Error(
+					err, "Error building MachinePool",
+					"userRequestedInstanceType", userRequestedInstanceType,
+				)
 			}
-			klog.Infof("Built MachinePool with instance type %v and name %v", userRequestedInstanceType, createMachinePool.ID())
+			logger.Info(
+				"Sending MachinePool creation request",
+				"instanceType", userRequestedInstanceType,
+				"machinePoolName", createMachinePool.ID(),
+			)
 			response, err := clusterMachinePools.Add().Body(createMachinePool).SendContext(ctx)
 			if err != nil {
-				klog.Errorf(`Error creating MachinePool: %v`, err)
+				logger.Error(err, "Error creating MachinePool")
+			} else {
+				logger.Info(
+					"Successfully created MachinePool",
+					"machinePoolName", createMachinePool.ID(),
+					"response", response,
+				)
 			}
-			klog.Infof("Created MachinePool: %v", response)
 		}
 	}
 	return ctrl.Result{Requeue: false}, nil
 }
 
 func (r *AppWrapperReconciler) deleteMachinePool(ctx context.Context, aw *arbv1.AppWrapper) (ctrl.Result, error) {
+	logger := ctrl.LoggerFrom(ctx)
 	connection, err := r.createOCMConnection()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
+		logger.Error(err, "Error creating OCM connection")
 		return ctrl.Result{}, err
 	}
 	defer connection.Close()
@@ -107,9 +118,16 @@ func (r *AppWrapperReconciler) deleteMachinePool(ctx context.Context, aw *arbv1.
 		if strings.Contains(id, aw.Name) {
 			targetMachinePool, err := connection.ClustersMgmt().V1().Clusters().Cluster(r.ocmClusterID).MachinePools().MachinePool(id).Delete().SendContext(ctx)
 			if err != nil {
-				klog.Infof("Error deleting target machinepool %v", targetMachinePool)
+				logger.Error(
+					err, "Error deleting machinepool",
+					"machinePool", targetMachinePool,
+				)
+			} else {
+				logger.Info(
+					"Successfully scaled down target machinepool",
+					"machinePool", targetMachinePool,
+				)
 			}
-			klog.Infof("Successfully Scaled down target machinepool %v", id)
 		}
 		return true
 	})
@@ -129,6 +147,7 @@ func (r *AppWrapperReconciler) machinePoolExists() (bool, error) {
 
 // getOCMClusterID determines the internal clusterID to be used for OCM API calls
 func (r *AppWrapperReconciler) getOCMClusterID(ctx context.Context) error {
+	logger := ctrl.LoggerFrom(ctx)
 	cv := &configv1.ClusterVersion{}
 	err := r.Get(ctx, types.NamespacedName{Name: "version"}, cv)
 	if err != nil {
@@ -139,7 +158,7 @@ func (r *AppWrapperReconciler) getOCMClusterID(ctx context.Context) error {
 
 	connection, err := r.createOCMConnection()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error creating OCM connection: %v", err)
+		logger.Error(err, "Error creating OCM connection")
 	}
 	defer connection.Close()
 
@@ -148,12 +167,17 @@ func (r *AppWrapperReconciler) getOCMClusterID(ctx context.Context) error {
 
 	response, err := collection.List().Search(fmt.Sprintf("external_id = '%s'", internalClusterID)).Size(1).Page(1).SendContext(ctx)
 	if err != nil {
-		klog.Errorf(`Error getting cluster id: %v`, err)
+		logger.Error(err, "Error getting cluster id")
 	}
 
 	response.Items().Each(func(cluster *cmv1.Cluster) bool {
 		r.ocmClusterID = cluster.ID()
-		fmt.Printf("%s - %s - %s\n", cluster.ID(), cluster.Name(), cluster.State())
+		logger.Info(
+			"Cluster Info",
+			"clusterId", cluster.ID(),
+			"clusterName", cluster.Name(),
+			"clusterState", cluster.State(),
+		)
 		return true
 	})
 	return nil

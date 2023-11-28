@@ -1,9 +1,11 @@
 package controllers
 
 import (
+	"context"
 	"testing"
 
 	"fmt"
+
 	"github.com/onsi/gomega"
 	machinev1 "github.com/openshift/api/machine/v1beta1"
 
@@ -47,7 +49,7 @@ func TestProviderSpecFromRawExtension(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result, err := ProviderSpecFromRawExtension(tt.rawExtension)
+			result, err := ProviderSpecFromRawExtension(context.TODO(), tt.rawExtension)
 			if err != nil {
 				g.Expect(err).To(gomega.Equal(tt.wantErr))
 			} else {
