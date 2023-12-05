@@ -74,8 +74,13 @@ func (r *AppWrapperReconciler) scaleMachinePool(ctx context.Context, aw *arbv1.A
 			m[aw.Name] = aw.Name
 			klog.Infof("The instanceRequired array: %v", userRequestedInstanceType)
 
+			machinePoolTaint := cmv1.NewTaint().
+				Key(aw.Name).
+				Value("value1").
+				Effect("PreferNoSchedule")
+
 			machinePoolID := strings.ReplaceAll(aw.Name+"-"+userRequestedInstanceType, ".", "-")
-			createMachinePool, err := cmv1.NewMachinePool().ID(machinePoolID).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
+			createMachinePool, err := cmv1.NewMachinePool().ID(machinePoolID).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Taints(machinePoolTaint).Build()
 			if err != nil {
 				klog.Errorf(`Error building MachinePool: %v`, err)
 			}
