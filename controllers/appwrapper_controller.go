@@ -120,17 +120,22 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, nil
 	}
 
-	demandPerInstanceType := r.discoverInstanceTypes(ctx, &appwrapper)
-	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
-		return r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
-	} else {
-		switch strings.ToLower(r.Config.MachineSetsStrategy) {
-		case "reuse":
-			return r.reconcileReuseMachineSet(ctx, &appwrapper, demandPerInstanceType)
-		case "duplicate":
-			return r.reconcileCreateMachineSet(ctx, &appwrapper, demandPerInstanceType)
+	status := appwrapper.Status.State
+	allconditions := appwrapper.Status.Conditions
+	if status == "Pending" && containsInsufficientCondition(allconditions) {
+		demandPerInstanceType := r.discoverInstanceTypes(ctx, &appwrapper)
+		if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
+			return r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
+		} else {
+			switch strings.ToLower(r.Config.MachineSetsStrategy) {
+			case "reuse":
+				return r.reconcileReuseMachineSet(ctx, &appwrapper, demandPerInstanceType)
+			case "duplicate":
+				return r.reconcileCreateMachineSet(ctx, &appwrapper, demandPerInstanceType)
+			}
 		}
 	}
+
 	return ctrl.Result{}, nil
 }
 
