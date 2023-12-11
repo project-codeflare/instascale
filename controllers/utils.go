@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/rand"
+	"strings"
 	"time"
 
 	machinev1 "github.com/openshift/api/machine/v1beta1"
+	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
 )
@@ -17,6 +19,15 @@ func resyncPeriod() func() time.Duration {
 		factor := rand.Float64() + 1
 		return time.Duration(float64(minResyncPeriod.Nanoseconds()) * factor)
 	}
+}
+
+func containsInsufficientCondition(allconditions []arbv1.AppWrapperCondition) bool {
+	for _, condition := range allconditions {
+		if strings.Contains(condition.Message, "Insufficient") {
+			return true
+		}
+	}
+	return false
 }
 
 // ProviderSpecFromRawExtension unmarshals the JSON-encoded spec
