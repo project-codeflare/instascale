@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/onsi/gomega v1.27.4
-	github.com/openshift-online/ocm-sdk-go v0.1.327
+	github.com/openshift-online/ocm-sdk-go v0.1.390
 	github.com/openshift/api v0.0.0-20220411210816-c3bb724c282a
 	github.com/project-codeflare/multi-cluster-app-dispatcher v1.38.1
 	k8s.io/api v0.26.2
