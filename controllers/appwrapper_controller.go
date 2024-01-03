@@ -18,9 +18,10 @@ package controllers
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"time"
+
+	ocmsdk "github.com/openshift-online/ocm-sdk-go"
 
 	"github.com/project-codeflare/instascale/pkg/config"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
@@ -37,15 +38,19 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log"
 )
 
+type MachineType string
+
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
 	client.Client
-	Scheme         *runtime.Scheme
-	Config         config.InstaScaleConfiguration
-	kubeClient     *kubernetes.Clientset
-	ocmClusterID   string
-	ocmToken       string
-	useMachineSets bool
+	Scheme        *runtime.Scheme
+	Config        config.InstaScaleConfiguration
+	kubeClient    *kubernetes.Clientset
+	ocmClusterID  string
+	ocmToken      string
+	ocmConnection *ocmsdk.Connection
+	MachineType   MachineType
+	machineCheck  bool
 }
 
 var (
@@ -54,9 +59,12 @@ var (
 )
 
 const (
-	namespaceToList = "openshift-machine-api"
-	minResyncPeriod = 10 * time.Minute
-	finalizerName   = "instascale.codeflare.dev/finalizer"
+	namespaceToList                    = "openshift-machine-api"
+	minResyncPeriod                    = 10 * time.Minute
+	finalizerName                      = "instascale.codeflare.dev/finalizer"
+	MachineTypeMachineSet  MachineType = "MachineSet"
+	MachineTypeMachinePool MachineType = "MachinePool"
+	MachineTypeNodePool    MachineType = "NodePool"
 )
 
 // +kubebuilder:rbac:groups=workload.codeflare.dev,resources=appwrappers,verbs=get;list;watch;create;update;patch;delete
@@ -81,14 +89,17 @@ const (
 // - https://pkg.go.dev/sigs.k8s.io/controller-runtime@v0.11.0/pkg/reconcile
 func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
 	_ = log.FromContext(ctx)
-	// todo: Move the getOCMClusterID call out of reconcile loop.
+	// todo: Move the setMachineType call out of reconcile loop.
 	// Only reason we are calling it here is that the client is not able to make
 	// calls until it is started, so SetupWithManager is not working.
-	if !r.useMachineSets && r.ocmClusterID == "" {
-		if err := r.getOCMClusterID(ctx); err != nil {
-			return ctrl.Result{Requeue: true, RequeueAfter: timeFiveSeconds}, err
+	if r.machineCheck == false && r.MachineType != MachineTypeMachineSet {
+		if err := r.setMachineType(ctx); err != nil {
+			return ctrl.Result{}, err
 		}
 	}
+
+	r.machineCheck = true
+
 	var appwrapper arbv1.AppWrapper
 
 	if err := r.Get(ctx, req.NamespacedName, &appwrapper); err != nil {
@@ -125,8 +136,14 @@ func (r *AppWrapperReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	if status == "Pending" && containsInsufficientCondition(allconditions) {
 		demandPerInstanceType := r.discoverInstanceTypes(ctx, &appwrapper)
 		if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
-			return r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
+			switch r.MachineType {
+			case MachineTypeNodePool:
+				return r.scaleNodePool(ctx, &appwrapper, demandPerInstanceType)
+			case MachineTypeMachinePool:
+				return r.scaleMachinePool(ctx, &appwrapper, demandPerInstanceType)
+			}
 		} else {
+			// use MachineSets
 			switch strings.ToLower(r.Config.MachineSetsStrategy) {
 			case "reuse":
 				return r.reconcileReuseMachineSet(ctx, &appwrapper, demandPerInstanceType)
@@ -146,7 +163,8 @@ func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, 
 	} else {
 		deletionMessage = "deleted"
 	}
-	if r.useMachineSets {
+	switch r.MachineType {
+	case MachineTypeMachineSet:
 		switch strings.ToLower(r.Config.MachineSetsStrategy) {
 		case "reuse":
 			matchedAw := r.findExactMatch(ctx, appwrapper)
@@ -158,6 +176,9 @@ func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, 
 					"newAppWrapper", matchedAw,
 				)
 				if err := r.swapNodeLabels(ctx, appwrapper, matchedAw); err != nil {
+					logger.Error(err, "Error swapping node labels for AppWrapper",
+						"appwrapper", appwrapper,
+					)
 					return err
 				}
 			} else {
@@ -167,6 +188,9 @@ func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, 
 					"deletionMessage", deletionMessage,
 				)
 				if err := r.annotateToDeleteMachine(ctx, appwrapper); err != nil {
+					logger.Error(err, "Error annotating to delete machine for AppWrapper",
+						"appwrapper", appwrapper,
+					)
 					return err
 				}
 			}
@@ -177,18 +201,52 @@ func (r *AppWrapperReconciler) finalizeScalingDownMachines(ctx context.Context, 
 				"deletionMessage", deletionMessage,
 			)
 			if err := r.deleteMachineSet(ctx, appwrapper); err != nil {
+				logger.Error(err, "Error deleting MachineSet for AppWrapper",
+					"appwrapper", appwrapper)
 				return err
 			}
 		}
-	} else {
+	case MachineTypeNodePool:
+		logger.Info(
+			"AppWrapper deleted, scaling down nodepool",
+			"appWrapper", appwrapper,
+			"deletionMessage", deletionMessage,
+		)
+		if _, err := r.deleteNodePool(ctx, appwrapper); err != nil {
+			logger.Error(err, "Error deleting NodePool for AppWrapper",
+				"appwrapper", appwrapper)
+			return err
+		}
+
+	case MachineTypeMachinePool:
 		logger.Info(
 			"AppWrapper deleted, scaling down machine pool",
 			"appWrapper", appwrapper,
 			"deletionMessage", deletionMessage,
 		)
 		if _, err := r.deleteMachinePool(ctx, appwrapper); err != nil {
+			logger.Error(err, "Error deleting MachinePool for AppWrapper",
+				"appwrapper", appwrapper)
 			return err
 		}
+	}
+	return nil
+}
+
+func (r *AppWrapperReconciler) setMachineType(ctx context.Context) error {
+	logger := ctrl.LoggerFrom(ctx)
+	if r.ocmClusterID == "" {
+		if err := r.getOCMClusterID(ctx); err != nil {
+			return err
+		}
+	}
+	hypershiftEnabled, err := r.checkHypershiftEnabled(ctx)
+	if err != nil {
+		logger.Error(err, "error checking if hypershift is enabled")
+		return err
+	}
+	if hypershiftEnabled {
+		r.MachineType = MachineTypeNodePool
 	}
 	return nil
 }
@@ -206,20 +264,19 @@ func (r *AppWrapperReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 	}
 
 	maxScaleNodesAllowed = int(r.Config.MaxScaleoutAllowed)
-	r.useMachineSets = true
+	r.MachineType = MachineTypeMachineSet // default to MachineSet
 	if ocmSecretRef := r.Config.OCMSecretRef; ocmSecretRef != nil {
-		r.useMachineSets = false
 		if ocmSecret, err := r.getOCMSecret(ctx, ocmSecretRef); err != nil {
-			return fmt.Errorf("error reading OCM Secret from ref %q: %w", ocmSecretRef, err)
+			logger.Error(err, "error reading OCM Secret from ref",
+				"ref", ocmSecretRef)
+			return err
 		} else if token := ocmSecret.Data["token"]; len(token) > 0 {
 			r.ocmToken = string(token)
+			r.MachineType = MachineTypeMachinePool
 		} else {
-			return fmt.Errorf("token is missing from OCM Secret %q", ocmSecretRef)
-		}
-		if ok, err := r.machinePoolExists(); err != nil {
+			logger.Error(err, "token is missing from OCM Secret",
+				"ref", ocmSecretRef)
 			return err
-		} else if ok {
-			logger.Info("Using machine pools for cluster auto-scaling")
 		}
 	}
 
@@ -235,12 +292,8 @@ func (r *AppWrapperReconciler) getOCMSecret(ctx context.Context, secretRef *core
 func (r *AppWrapperReconciler) discoverInstanceTypes(ctx context.Context, aw *arbv1.AppWrapper) map[string]int {
 	logger := ctrl.LoggerFrom(ctx)
 	demandMapPerInstanceType := make(map[string]int)
-	var instanceRequired []string
-	for k, v := range aw.Labels {
-		if k == "orderedinstance" {
-			instanceRequired = strings.Split(v, "_")
-		}
-	}
+
+	instanceRequired := getInstanceRequired(aw.Labels)
 
 	if len(instanceRequired) < 1 {
 		logger.Info(

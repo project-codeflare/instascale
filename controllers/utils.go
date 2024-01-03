@@ -4,15 +4,23 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"math/rand"
-	"strings"
-	"time"
 
 	machinev1 "github.com/openshift/api/machine/v1beta1"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 	"k8s.io/apimachinery/pkg/runtime"
 	ctrl "sigs.k8s.io/controller-runtime"
+
+	"math/rand"
+	"strings"
+	"time"
 )
+
+func getInstanceRequired(labels map[string]string) []string {
+	if value, exists := labels["orderedinstance"]; exists {
+		return strings.Split(value, "_")
+	}
+	return []string{}
+}
 
 func resyncPeriod() func() time.Duration {
 	return func() time.Duration {
@@ -57,4 +65,9 @@ func contains(s []string, str string) bool {
 	}
 
 	return false
+}
+
+func hasAwLabel(labels map[string]string, aw *arbv1.AppWrapper) bool {
+	value, ok := labels[aw.Name]
+	return ok && value == aw.Name
 }
