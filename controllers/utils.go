@@ -38,6 +38,28 @@ func getInstanceRequired(labels map[string]string) []string {
 	return []string{}
 }
 
+func (r *AppWrapperReconciler) generateMachineName(ctx context.Context, awName string) string {
+
+	logger := ctrl.LoggerFrom(ctx)
+	const randomSuffixLength = 4
+	maxBaseNameLength := r.machineNameCharacterLimit - randomSuffixLength - 1
+
+	// Truncate the base name if it exceeds the maximum length.
+	if len(awName) > maxBaseNameLength {
+		truncatedName := awName[:maxBaseNameLength]
+
+		logger.Info(
+			"instance name exceeds character limit",
+			"limit", r.machineNameCharacterLimit,
+			"truncatedName", truncatedName,
+		)
+
+		awName = truncatedName
+	}
+
+	return fmt.Sprintf("%s-%04x", awName, rand.Intn(1<<16))
+}
+
 func resyncPeriod() func() time.Duration {
 	return func() time.Duration {
 		factor := rand.Float64() + 1
@@ -84,6 +106,7 @@ func contains(s []string, str string) bool {
 }
 
 func hasAwLabel(labels map[string]string, aw *arbv1.AppWrapper) bool {
-	value, ok := labels[aw.Name]
-	return ok && value == aw.Name
+	label := fmt.Sprintf("%s-%s", aw.Name, aw.Namespace)
+	value, ok := labels[label]
+	return ok && value == label
 }
