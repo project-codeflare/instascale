@@ -43,14 +43,15 @@ type MachineType string
 // AppWrapperReconciler reconciles a AppWrapper object
 type AppWrapperReconciler struct {
 	client.Client
-	Scheme        *runtime.Scheme
-	Config        config.InstaScaleConfiguration
-	kubeClient    *kubernetes.Clientset
-	ocmClusterID  string
-	ocmToken      string
-	ocmConnection *ocmsdk.Connection
-	MachineType   MachineType
-	machineCheck  bool
+	Scheme                    *runtime.Scheme
+	Config                    config.InstaScaleConfiguration
+	kubeClient                *kubernetes.Clientset
+	ocmClusterID              string
+	ocmToken                  string
+	ocmConnection             *ocmsdk.Connection
+	MachineType               MachineType
+	machineCheck              bool
+	machineNameCharacterLimit int
 }
 
 var (
@@ -247,6 +248,7 @@ func (r *AppWrapperReconciler) setMachineType(ctx context.Context) error {
 	}
 	if hypershiftEnabled {
 		r.MachineType = MachineTypeNodePool
+		r.machineNameCharacterLimit = 15
 	}
 	return nil
 }
@@ -256,6 +258,7 @@ func (r *AppWrapperReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Ma
 
 	logger := ctrl.LoggerFrom(ctx)
 	restConfig := mgr.GetConfig()
+	r.machineNameCharacterLimit = 30
 
 	var err error
 	r.kubeClient, err = kubernetes.NewForConfig(restConfig)

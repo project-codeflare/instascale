@@ -18,8 +18,8 @@ package controllers
 
 import (
 	"context"
-	"strings"
 
+	"fmt"
 	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 
@@ -54,14 +54,16 @@ func (r *AppWrapperReconciler) scaleNodePool(ctx context.Context, aw *arbv1.AppW
 		})
 
 		if numberOfMachines != replicas {
+			label := fmt.Sprintf("%s-%s", aw.Name, aw.Namespace)
+
 			m := make(map[string]string)
-			m[aw.Name] = aw.Name
+			m[label] = label
+
 			logger.Info("The instanceRequired array",
 				"InstanceRequired", userRequestedInstanceType)
 
-			nodePoolID := strings.ReplaceAll(aw.Name+"-"+userRequestedInstanceType, ".", "-")
-
-			createNodePool, err := cmv1.NewNodePool().AWSNodePool(cmv1.NewAWSNodePool().InstanceType(userRequestedInstanceType)).ID(nodePoolID).Replicas(replicas).Labels(m).Build()
+			nodePoolID := r.generateMachineName(ctx, aw.Name)
+			nodePool, err := cmv1.NewNodePool().AWSNodePool(cmv1.NewAWSNodePool().InstanceType(userRequestedInstanceType)).ID(nodePoolID).Replicas(replicas).Labels(m).Build()
 			if err != nil {
 				logger.Error(
 					err, "Error building NodePool",
@@ -71,15 +73,15 @@ func (r *AppWrapperReconciler) scaleNodePool(ctx context.Context, aw *arbv1.AppW
 			logger.Info(
 				"Sending NodePool creation request",
 				"instanceType", userRequestedInstanceType,
-				"nodePoolName", createNodePool.ID(),
+				"nodePoolName", nodePool.ID(),
 			)
-			response, err := clusterNodePools.Add().Body(createNodePool).SendContext(ctx)
+			response, err := clusterNodePools.Add().Body(nodePool).SendContext(ctx)
 			if err != nil {
 				logger.Error(err, "Error creating NodePool")
 			} else {
 				logger.Info(
 					"Successfully created NodePool",
-					"nodePoolName", createNodePool.ID(),
+					"nodePoolName", nodePool.ID(),
 					"response", response,
 				)
 			}
@@ -102,8 +104,8 @@ func (r *AppWrapperReconciler) deleteNodePool(ctx context.Context, aw *arbv1.App
 	nodePoolsListResponse, _ := nodePoolsConnection.Send()
 	nodePoolsList := nodePoolsListResponse.Items()
 	nodePoolsList.Range(func(index int, item *cmv1.NodePool) bool {
-		id, _ := item.GetID()
-		if strings.Contains(id, aw.Name) {
+		if hasAwLabel(item.Labels(), aw) {
+			id, _ := item.GetID()
 			targetNodePool, err := connection.ClustersMgmt().V1().Clusters().Cluster(r.ocmClusterID).NodePools().NodePool(id).Delete().SendContext(ctx)
 			if err != nil {
 				logger.Error(

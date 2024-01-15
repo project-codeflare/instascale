@@ -18,8 +18,8 @@ package controllers
 
 import (
 	"context"
-	"strings"
 
+	"fmt"
 	cmv1 "github.com/openshift-online/ocm-sdk-go/clustersmgmt/v1"
 	arbv1 "github.com/project-codeflare/multi-cluster-app-dispatcher/pkg/apis/controller/v1beta1"
 
@@ -54,11 +54,13 @@ func (r *AppWrapperReconciler) scaleMachinePool(ctx context.Context, aw *arbv1.A
 		})
 
 		if numberOfMachines != replicas {
-			m := make(map[string]string)
-			m[aw.Name] = aw.Name
+			label := fmt.Sprintf("%s-%s", aw.Name, aw.Namespace)
 
-			machinePoolID := strings.ReplaceAll(aw.Name+"-"+userRequestedInstanceType, ".", "-")
-			createMachinePool, err := cmv1.NewMachinePool().ID(machinePoolID).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
+			m := make(map[string]string)
+			m[label] = label
+
+			machinePoolID := r.generateMachineName(ctx, aw.Name)
+			machinePool, err := cmv1.NewMachinePool().ID(machinePoolID).InstanceType(userRequestedInstanceType).Replicas(replicas).Labels(m).Build()
 			if err != nil {
 				logger.Error(
 					err, "Error building MachinePool",
@@ -68,15 +70,15 @@ func (r *AppWrapperReconciler) scaleMachinePool(ctx context.Context, aw *arbv1.A
 			logger.Info(
 				"Sending MachinePool creation request",
 				"instanceType", userRequestedInstanceType,
-				"machinePoolName", createMachinePool.ID(),
+				"machinePoolName", machinePool.ID(),
 			)
-			response, err := clusterMachinePools.Add().Body(createMachinePool).SendContext(ctx)
+			response, err := clusterMachinePools.Add().Body(machinePool).SendContext(ctx)
 			if err != nil {
 				logger.Error(err, "Error creating MachinePool")
 			} else {
 				logger.Info(
 					"Successfully created MachinePool",
-					"machinePoolName", createMachinePool.ID(),
+					"machinePoolName", machinePool.ID(),
 					"response", response,
 				)
 			}
@@ -99,8 +101,8 @@ func (r *AppWrapperReconciler) deleteMachinePool(ctx context.Context, aw *arbv1.
 	machinePoolsListResponse, _ := machinePoolsConnection.Send()
 	machinePoolsList := machinePoolsListResponse.Items()
 	machinePoolsList.Range(func(index int, item *cmv1.MachinePool) bool {
-		id, _ := item.GetID()
-		if strings.Contains(id, aw.Name) {
+		if hasAwLabel(item.Labels(), aw) {
+			id, _ := item.GetID()
 			targetMachinePool, err := connection.ClustersMgmt().V1().Clusters().Cluster(r.ocmClusterID).MachinePools().MachinePool(id).Delete().SendContext(ctx)
 			if err != nil {
 				logger.Error(
@@ -116,5 +118,6 @@ func (r *AppWrapperReconciler) deleteMachinePool(ctx context.Context, aw *arbv1.
 		}
 		return true
 	})
+
 	return ctrl.Result{Requeue: false}, nil
 }
