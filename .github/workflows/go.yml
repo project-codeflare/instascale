@@ -25,4 +25,4 @@ jobs:
       run: go build -o bin/manager main.go
 
     - name: Test
-      run: go test -v ./...
+      run: go test -v ./controllers

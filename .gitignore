@@ -26,3 +26,6 @@ testbin/*
 
 # VS Code files
 .vscode
+
+# Functional-test generated log-file
+*.log
