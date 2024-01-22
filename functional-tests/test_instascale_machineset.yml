@@ -1,0 +1,63 @@
+apiVersion: machine.openshift.io/v1beta1
+kind: MachineSet
+metadata:
+  name: test-instascale
+  labels:
+    machine.openshift.io/cluster-api-cluster: fionawaters-v2pm4
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      machine.openshift.io/cluster-api-cluster: fionawaters-v2pm4
+      machine.openshift.io/cluster-api-machineset: test-instascale
+  template:
+    metadata:
+      labels:
+        machine.openshift.io/cluster-api-cluster: fionawaters-v2pm4
+        machine.openshift.io/cluster-api-machine-role: worker
+        machine.openshift.io/cluster-api-machine-type: worker
+        machine.openshift.io/cluster-api-machineset: test-instascale
+    spec:
+      lifecycleHooks: {}
+      metadata:
+        labels:
+          node-role.kubernetes.io/<role>: ''
+      providerSpec:
+        value:
+          userDataSecret:
+            name: worker-user-data
+          placement:
+            availabilityZone: us-east-1a
+            region: us-east-1
+          credentialsSecret:
+            name: aws-cloud-credentials
+          instanceType: test.instance1
+          metadata:
+            creationTimestamp: null
+          blockDevices:
+            - ebs:
+                iops: 0
+                kmsKey: {}
+                volumeSize: 120
+                volumeType: gp2
+          securityGroups:
+            - filters:
+                - name: 'tag:Name'
+                  values:
+                    - fionawaters-v2pm4-worker-sg
+          kind: AWSMachineProviderConfig
+          metadataServiceOptions: {}
+          tags:
+            - name: kubernetes.io/cluster/fionawaters-v2pm4
+              value: owned
+          deviceIndex: 0
+          ami:
+            id: ami-0624891c612b5eaa0
+          subnet:
+            filters:
+              - name: 'tag:Name'
+                values:
+                  - fionawaters-v2pm4-private-us-east-1a
+          apiVersion: awsproviderconfig.openshift.io/v1beta1
+          iamInstanceProfile:
+            id: fionawaters-v2pm4-worker-profile

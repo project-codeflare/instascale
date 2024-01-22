@@ -1,0 +1,60 @@
+# This workflow will build a golang project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
+
+name: Functional-tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Set Go
+      uses: actions/setup-go@v3
+      with:
+        go-version: v1.19
+
+    - name: init directories
+      run: mkdir -p "$(pwd)/bin"
+        
+    - name: Download kubebuilder 
+      run: |
+        version=1.0.8
+        arch=amd64
+        curl -L -O "https://github.com/kubernetes-sigs/kubebuilder/releases/download/v${version}/kubebuilder_${version}_linux_${arch}.tar.gz"
+        tar -zxvf kubebuilder_${version}_linux_${arch}.tar.gz
+        mv kubebuilder_${version}_linux_${arch} kubebuilder
+        echo "kubebuilder_${version}_linux_${arch} renamed to kubebuilder"
+        sudo mv kubebuilder /usr/local/
+        echo "kubebuilder moved to /usr/local/ path"
+        DIRECTORY=/usr/local/kubebuilder
+        if [ -d "$DIRECTORY" ]; then
+          echo "$DIRECTORY does exist."
+        else
+          echo "$DIRECTORY does not exist."
+        fi
+        echo "PATH=$PATH:$DIRECTORY/bin" >> $GITHUB_ENV
+
+    - name: Set up Kubebuilder and setup-envtest
+      run: |
+        make envtest
+        echo "KUBEBUILDER_ASSETS=$(./bin/setup-envtest use 1.23 -p path)" >> $GITHUB_ENV
+        echo "USE_EXISTING_CLUSTER=false" >> $GITHUB_ENV
+        echo "KUBEBUILDER_ASSETS : $(./bin/setup-envtest use 1.23 -p path)"
+        echo "USE_EXISTING_CLUSTER : false"
+        
+    - name: Test
+      run: go test -v ./functional-tests
+
+    - name: Upload test log-file as an artifact
+      uses: actions/upload-artifact@v2
+      with: 
+        name: functional-test-logs
+        path: ./functional-tests/functional-test-logfile.log
