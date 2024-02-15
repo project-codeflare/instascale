@@ -14,10 +14,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
     - name: Set Go
-      uses: actions/setup-go@v3
+      uses: actions/setup-go@v5
       with:
         go-version: v1.19
 
@@ -54,7 +54,7 @@ jobs:
       run: go test -v ./functional-tests
 
     - name: Upload test log-file as an artifact
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v4
       with: 
         name: functional-test-logs
         path: ./functional-tests/functional-test-logfile.log
