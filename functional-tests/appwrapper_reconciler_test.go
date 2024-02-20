@@ -59,7 +59,7 @@ func startEnvTest(t *testing.T) *rest.Config {
 	//specify testEnv configuration
 	testEnv := &envtest.Environment{
 		CRDDirectoryPaths: []string{
-			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "project-codeflare", "multi-cluster-app-dispatcher@v1.39.0", "config", "crd", "bases"),
+			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "project-codeflare", "multi-cluster-app-dispatcher@v1.40.0", "config", "crd", "bases"),
 			filepath.Join(build.Default.GOPATH, "pkg", "mod", "github.com", "openshift", "api@v0.0.0-20230213134911-7ba313770556", "machine", "v1beta1"),
 		},
 		ErrorIfCRDPathMissing: true,
