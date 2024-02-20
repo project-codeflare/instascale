@@ -23,8 +23,8 @@ jobs:
 
     - name: init directories
       run: mkdir -p "$(pwd)/bin"
-        
-    - name: Download kubebuilder 
+
+    - name: Download kubebuilder
       run: |
         version=1.0.8
         arch=amd64
@@ -49,7 +49,7 @@ jobs:
         echo "USE_EXISTING_CLUSTER=false" >> $GITHUB_ENV
         echo "KUBEBUILDER_ASSETS : $(./bin/setup-envtest use 1.23 -p path)"
         echo "USE_EXISTING_CLUSTER : false"
-        
+
     - name: Test
       run: go test -v ./functional-tests
 
