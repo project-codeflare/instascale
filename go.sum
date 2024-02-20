@@ -339,8 +339,8 @@ github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZb
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/project-codeflare/codeflare-common v0.0.0-20240126090446-1edd775e2d40 h1:9BVjoB2/Y7INzFjOPZ79bsWDm3uLSQS7bhw+nPoYYBc=
 github.com/project-codeflare/codeflare-common v0.0.0-20240126090446-1edd775e2d40/go.mod h1:2Ck9LC+6Xi4jTDSlCJoP00tCzSrxek0roLsjvUgL2gY=
-github.com/project-codeflare/multi-cluster-app-dispatcher v1.39.0 h1:zoS7pEAWK6eGELPCIIHB3W8Zb/a27Rf55ChYso7EV3o=
-github.com/project-codeflare/multi-cluster-app-dispatcher v1.39.0/go.mod h1:XCZKkq8Mz2WySbV3NfVINNciy+as7Rq9Xs2megNFbdk=
+github.com/project-codeflare/multi-cluster-app-dispatcher v1.40.0 h1:IkTmd/W/zxcsC5s4EbnW74PFpkQVEiTc/8rWWwFw0Ok=
+github.com/project-codeflare/multi-cluster-app-dispatcher v1.40.0/go.mod h1:XCZKkq8Mz2WySbV3NfVINNciy+as7Rq9Xs2megNFbdk=
 github.com/prometheus/client_golang v0.9.1/go.mod h1:7SWBe2y4D6OKWSNQJUaRYU/AaXPKyh/dDVn+NZz0KFw=
 github.com/prometheus/client_golang v1.0.0/go.mod h1:db9x61etRT2tGnBNRi70OPL5FsnadC4Ky3P0J6CfImo=
 github.com/prometheus/client_golang v1.7.1/go.mod h1:PY5Wy2awLA44sXw4AOSfFBetzPP4j5+D6mVACh+pe2M=

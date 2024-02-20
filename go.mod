@@ -7,7 +7,7 @@ require (
 	github.com/openshift-online/ocm-sdk-go v0.1.368
 	github.com/openshift/api v0.0.0-20230213134911-7ba313770556
 	github.com/project-codeflare/codeflare-common v0.0.0-20240126090446-1edd775e2d40
-	github.com/project-codeflare/multi-cluster-app-dispatcher v1.39.0
+	github.com/project-codeflare/multi-cluster-app-dispatcher v1.40.0
 	k8s.io/api v0.27.8
 	k8s.io/apimachinery v0.27.8
 	k8s.io/client-go v0.27.8
