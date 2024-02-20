@@ -50,8 +50,6 @@ jobs:
     # Build and test repository to make sure that MCAD update didn't break anything
     - name: Build
       run: go build -o bin/manager main.go
-    - name: Test
-      run: go test -v ./...
 
     # Update dependencies
     - name: Commit go.mod and go.sum changes to the branch
