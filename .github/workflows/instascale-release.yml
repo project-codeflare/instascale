@@ -47,6 +47,10 @@ jobs:
       run: |
         go get github.com/project-codeflare/multi-cluster-app-dispatcher@${{ github.event.inputs.mcad-version }}
 
+    - name: Adjust multi-cluster-app-dispatcher dependency in functional tests
+      run: |
+        sed -i -E "s|(.*multi-cluster-app-dispatcher@)v[0-9]+\.[0-9]+\.[0-9]+(.*)|\1${{ github.event.inputs.mcad-version }}\2|" functional-tests/appwrapper_reconciler_test.go
+
     # Build and test repository to make sure that MCAD update didn't break anything
     - name: Build
       run: go build -o bin/manager main.go
@@ -54,11 +58,11 @@ jobs:
       run: go test -v ./...
 
     # Update dependencies
-    - name: Commit go.mod and go.sum changes to the branch
+    - name: Commit go.mod, go.sum, and functional tests changes to the branch
       uses: stefanzweifel/git-auto-commit-action@v5
       with:
-        commit_message: Update go.mod and go.sum to MCAD ${{ github.event.inputs.mcad-version }}
-        file_pattern: 'go.mod go.sum'
+        commit_message: Update go.mod, go.sum, and functional tests to MCAD ${{ github.event.inputs.mcad-version }}
+        file_pattern: 'go.mod go.sum *.go'
         create_branch: true
         branch: ${{ env.PR_BRANCH }}
 
